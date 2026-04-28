@@ -1,13 +1,48 @@
 /**
- * Skip Wait Timers — DOM-based, 3 sequential approaches
+ * Skip Wait Timers — DOM-based, 3 sequential approaches + MutationObserver
  */
 import { esc } from '../utils/helpers';
 
 type LogFn = (msg: string, level?: string) => void;
 
-export async function trySkipWaitTimers(owner: string, repo: string, addLog: LogFn): Promise<boolean> {
+/**
+ * Observe DOM for "Start all waiting jobs" button appearance.
+ * Fires `onDetected` immediately when the button is found (either already
+ * present or dynamically added).  Returns a disconnect function.
+ */
+export function observeSkipButton(onDetected: () => void): () => void {
+  const check = (el: HTMLElement): boolean =>
+    /start all waiting/i.test(el.textContent || '');
+
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        if (check(node as HTMLElement)) {
+          onDetected();
+          return;
+        }
+      }
+    }
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  // Check if button already exists in the current DOM
+  const existing = document.querySelectorAll<HTMLElement>('button, [role="button"], summary');
+  for (const btn of existing) {
+    if (check(btn)) {
+      onDetected();
+      break;
+    }
+  }
+
+  return () => observer.disconnect();
+}
+
+export async function trySkipWaitTimers(owner: string, repo: string, addLog: LogFn, skipInitialDelay = false): Promise<boolean> {
   try {
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, skipInitialDelay ? 300 : 2000));
 
     // DEBUG: dump relevant DOM elements
     const allForms = [...document.querySelectorAll('form')];

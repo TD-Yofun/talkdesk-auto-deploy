@@ -7,7 +7,7 @@ import { createState, GRACE_PERIOD, type State } from './core/state';
 import { initLogStore, setLogSaving, downloadLog } from './core/log-store';
 import { saveRunningState, wasRunning, saveSession, loadSession, clearSession } from './core/session';
 import { fetchRunInfo, fetchPending, approveDeployments, fetchJobs } from './api/api';
-import { trySkipWaitTimers } from './api/skip-timers';
+import { trySkipWaitTimers, observeSkipButton } from './api/skip-timers';
 import { esc } from './utils/helpers';
 import { injectStyles } from './ui/styles';
 import {
@@ -30,9 +30,48 @@ if (params) {
   // ── Bound helpers ────────────────────────────────────────
   const log = (msg: string, level?: string) => addLog(el, msg, level);
 
+  let skipInProgress = false;
+  let skipCooldownUntil = 0;
+  let disconnectSkipObserver: (() => void) | null = null;
+
   function recordEvent(type: string, detail: string): void {
     state.sessionEvents.push({ ts: Date.now(), type, detail });
     saveSession(runId, state);
+  }
+
+  // ── Skip observer (MutationObserver-based) ────────────────
+  async function handleSkipDetected(): Promise<void> {
+    if (skipInProgress || !state.running || !config.autoSkip) return;
+    if (Date.now() < skipCooldownUntil) return;
+    skipInProgress = true;
+    log('[skip-observer] Detected "Start all waiting jobs" button in DOM');
+    try {
+      const skipped = await trySkipWaitTimers(owner, repo, log, true);
+      if (skipped) {
+        log('✅ Skip attempted (observer) — refreshing...', 'ok');
+        state.sessionSkipped++;
+        recordEvent('skip', 'Skipped wait timers (observer)');
+        saveSession(runId, state);
+        softRefresh();
+      } else {
+        skipCooldownUntil = Date.now() + 30_000;
+        log('[skip-observer] Skip failed, cooldown 30s before next attempt', 'warn');
+      }
+    } finally {
+      skipInProgress = false;
+    }
+  }
+
+  function startSkipObserver(): void {
+    stopSkipObserver();
+    disconnectSkipObserver = observeSkipButton(handleSkipDetected);
+  }
+
+  function stopSkipObserver(): void {
+    if (disconnectSkipObserver) {
+      disconnectSkipObserver();
+      disconnectSkipObserver = null;
+    }
   }
 
   // ── Poll loop ────────────────────────────────────────────
@@ -102,7 +141,7 @@ if (params) {
           (d) => !d.current_user_can_approve && d.wait_timer && d.wait_timer > 0
         );
 
-        if (config.autoSkip && waitGates.length > 0) {
+        if (config.autoSkip && waitGates.length > 0 && !skipInProgress) {
           const skipKey = waitGates.map((d) => d.environment.name).sort().join(',');
           if (skipKey !== state.lastSkipKey) {
             state.lastSkipKey = skipKey;
@@ -177,6 +216,7 @@ if (params) {
     recordEvent('start', `Started (interval=${config.interval}s, approve=${config.autoApprove}, skip=${config.autoSkip})`);
     log(`🚀 Started monitoring (interval=${config.interval}s, approve=${config.autoApprove}, skip=${config.autoSkip}, log=${config.saveLog})`);
     renderToggle(el, true);
+    startSkipObserver();
     poll();
   }
 
@@ -193,12 +233,14 @@ if (params) {
     log(`🚀 Started monitoring (interval=${config.interval}s, approve=${config.autoApprove}, skip=${config.autoSkip}, log=${config.saveLog})`);
     renderToggle(el, true);
     renderCounters(el, state);
+    startSkipObserver();
     poll();
   }
 
   function stop(): void {
     state.running = false;
     saveRunningState(runId, false);
+    stopSkipObserver();
     if (state.pollTimer) {
       clearTimeout(state.pollTimer);
       state.pollTimer = null;

@@ -193,9 +193,32 @@
   function fetchJobs(owner, repo, runId, token) {
     return api("GET", `/repos/${owner}/${repo}/actions/runs/${runId}/jobs?per_page=100`, token);
   }
-  async function trySkipWaitTimers(owner, repo, addLog2) {
+  function observeSkipButton(onDetected) {
+    const check = (el) => /start all waiting/i.test(el.textContent || "");
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          if (check(node)) {
+            onDetected();
+            return;
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    const existing = document.querySelectorAll('button, [role="button"], summary');
+    for (const btn of existing) {
+      if (check(btn)) {
+        onDetected();
+        break;
+      }
+    }
+    return () => observer.disconnect();
+  }
+  async function trySkipWaitTimers(owner, repo, addLog2, skipInitialDelay = false) {
     try {
-      await new Promise((r) => setTimeout(r, 2e3));
+      await new Promise((r) => setTimeout(r, skipInitialDelay ? 300 : 2e3));
       const allForms = [...document.querySelectorAll("form")];
       const skipForms = allForms.filter((f) => {
         const a = f.getAttribute("action") || "";
@@ -787,6 +810,14 @@
     let recordEvent = function(type, detail) {
       state.sessionEvents.push({ ts: Date.now(), type, detail });
       saveSession(runId, state);
+    }, startSkipObserver = function() {
+      stopSkipObserver();
+      disconnectSkipObserver = observeSkipButton(handleSkipDetected);
+    }, stopSkipObserver = function() {
+      if (disconnectSkipObserver) {
+        disconnectSkipObserver();
+        disconnectSkipObserver = null;
+      }
     }, softRefresh = function() {
       log("Refreshing page...");
       location.reload();
@@ -808,6 +839,7 @@
       recordEvent("start", `Started (interval=${config.interval}s, approve=${config.autoApprove}, skip=${config.autoSkip})`);
       log(`🚀 Started monitoring (interval=${config.interval}s, approve=${config.autoApprove}, skip=${config.autoSkip}, log=${config.saveLog})`);
       renderToggle(el, true);
+      startSkipObserver();
       poll();
     }, resume = function() {
       if (!config.token) {
@@ -822,10 +854,12 @@
       log(`🚀 Started monitoring (interval=${config.interval}s, approve=${config.autoApprove}, skip=${config.autoSkip}, log=${config.saveLog})`);
       renderToggle(el, true);
       renderCounters(el, state);
+      startSkipObserver();
       poll();
     }, stop = function() {
       state.running = false;
       saveRunningState(runId, false);
+      stopSkipObserver();
       if (state.pollTimer) {
         clearTimeout(state.pollTimer);
         state.pollTimer = null;
@@ -849,6 +883,30 @@
     injectStyles();
     const el = buildUI(runId, config);
     const log = (msg, level) => addLog(el, msg, level);
+    let skipInProgress = false;
+    let skipCooldownUntil = 0;
+    let disconnectSkipObserver = null;
+    async function handleSkipDetected() {
+      if (skipInProgress || !state.running || !config.autoSkip) return;
+      if (Date.now() < skipCooldownUntil) return;
+      skipInProgress = true;
+      log('[skip-observer] Detected "Start all waiting jobs" button in DOM');
+      try {
+        const skipped = await trySkipWaitTimers(owner, repo, log, true);
+        if (skipped) {
+          log("✅ Skip attempted (observer) — refreshing...", "ok");
+          state.sessionSkipped++;
+          recordEvent("skip", "Skipped wait timers (observer)");
+          saveSession(runId, state);
+          softRefresh();
+        } else {
+          skipCooldownUntil = Date.now() + 3e4;
+          log("[skip-observer] Skip failed, cooldown 30s before next attempt", "warn");
+        }
+      } finally {
+        skipInProgress = false;
+      }
+    }
     async function poll() {
       if (!state.running) return;
       state.pollCycle++;
@@ -904,7 +962,7 @@
           const waitGates = pending.filter(
             (d) => !d.current_user_can_approve && d.wait_timer && d.wait_timer > 0
           );
-          if (config.autoSkip && waitGates.length > 0) {
+          if (config.autoSkip && waitGates.length > 0 && !skipInProgress) {
             const skipKey = waitGates.map((d) => d.environment.name).sort().join(",");
             if (skipKey !== state.lastSkipKey) {
               state.lastSkipKey = skipKey;
