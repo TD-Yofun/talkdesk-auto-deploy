@@ -1,5 +1,7 @@
 # Auto-Approve Deploy Gates
 
+**English** | [中文](README.zh-CN.md)
+
 A Tampermonkey userscript that automatically approves GitHub Actions deployment gates and skips wait timers — no more manual clicking through multi-environment deploy pipelines.
 
 ## Features
