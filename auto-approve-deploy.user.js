@@ -31,7 +31,7 @@
   // Persistent Config
   // ═══════════════════════════════════════════════════════════════════════════
   let token      = GM_getValue('gh_token', '');
-  let interval   = GM_getValue('interval', 30);
+  let interval   = GM_getValue('interval', 15);
   let cfgApprove = GM_getValue('auto_approve', true);
   let cfgSkip    = GM_getValue('auto_skip', true);
   let cfgSaveLog = GM_getValue('save_log', false);
@@ -408,11 +408,9 @@
             addLog(`[skip]   clicking submit: "${st.slice(0, 60)}"`, 'ok');
             submitBtn.click();
 
-            // Wait for the page to navigate; if it doesn't, force reload
+            // Wait for form submission to process
             await new Promise((r) => setTimeout(r, 3000));
-            addLog(`[skip] Approach 1: confirmed! Reloading page...`, 'ok');
-            location.reload();
-            return true; // won't actually run if reload works
+            return true;
           }
 
           addLog('[skip] Approach 1: no submit button found in dialog', 'warn');
@@ -554,20 +552,17 @@
         addLog(`Found ${approvable.length} approvable gate(s): ${envNames}`);
 
         try {
-          const result = await approveDeployments(envIds);
-          if (Array.isArray(result)) {
-            const names = result
-              .map((r) => r.environment.name)
-              .join(', ');
-            addLog(`✅ Approved: ${names}`, 'ok');
-            sessionApproved += approvable.length;
-            totalApproved += approvable.length;
-            recordEvent('approve', `Approved: ${names}`);
-            renderCounters();
-            softRefresh();
-          } else {
-            addLog('⚠️ Unexpected approve response', 'warn');
+          await approveDeployments(envIds);
+          addLog(`✅ Approved: ${envNames}`, 'ok');
+          sessionApproved += approvable.length;
+          totalApproved += approvable.length;
+          recordEvent('approve', `Approved: ${envNames}`);
+          renderCounters();
+          // No page refresh needed — API-only, schedule quick re-poll
+          if (running) {
+            pollTimer = setTimeout(poll, 5000);
           }
+          return;
         } catch (e) {
           addLog(`⚠️ Approve failed: ${e.message}`, 'warn');
         }
