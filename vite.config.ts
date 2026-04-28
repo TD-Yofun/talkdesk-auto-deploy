@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
-import monkey from 'vite-plugin-monkey';
+import monkey, { type MonkeyUserScript } from 'vite-plugin-monkey';
 
-const userscriptConfig = {
+const userscriptConfig: MonkeyUserScript = {
   name: 'Auto-Approve Deploy Gates',
   namespace: 'https://github.com/auto-deploy-gates',
   version: '1.0.0',
@@ -17,7 +17,7 @@ const userscriptConfig = {
   ],
   connect: ['api.github.com'],
   'run-at': 'document-idle',
-} as const;
+};
 
 /** Minify CSS inside GM_addStyle(`...`) and HTML inside .innerHTML = `...` */
 function minifyTemplateStrings(): Plugin {
