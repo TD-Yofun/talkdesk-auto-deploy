@@ -16,8 +16,8 @@ Tampermonkey userscript (`auto-approve-deploy.user.js`) that auto-approves GitHu
 
 ```
 auto-approve-deploy.user.js   ← Single-file userscript (all logic)
-README.md                      ← User documentation
-auto-approve-deploy.sh         ← CLI alternative (shell script)
+README.md                      ← User documentation (English)
+README.zh-CN.md                ← User documentation (Chinese)
 ```
 
 Key sections in the userscript (in order):

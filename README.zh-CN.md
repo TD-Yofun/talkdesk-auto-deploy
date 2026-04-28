@@ -68,10 +68,6 @@ GitHub Token 需要以下权限：
 
 此功能使用浏览器会话 Cookie（而非 API Token），因此只能在浏览器内运行。
 
-## CLI 替代方案
-
-如果你更喜欢命令行方式，可以使用 `auto-approve-deploy.sh` Shell 脚本（仅支持 API 审批，不支持跳过计时器）。
-
 ## 许可证
 
 MIT
