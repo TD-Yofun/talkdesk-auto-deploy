@@ -1,0 +1,20 @@
+{
+  "name": "talkdesk-auto-deploy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --mode development --watch",
+    "dev:all": "concurrently \"vite build --mode development --watch\" \"vite build --mode production --watch\"",
+    "build": "vite build --mode development && vite build --mode production",
+    "build:dev": "vite build --mode development",
+    "build:prod": "vite build --mode production"
+  },
+  "devDependencies": {
+    "@types/tampermonkey": "^5.0.5",
+    "concurrently": "^9.2.1",
+    "typescript": "^6.0.3",
+    "vite": "^6.4.2",
+    "vite-plugin-monkey": "^7.1.9"
+  }
+}

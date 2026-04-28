@@ -2,12 +2,12 @@
 
 ## Overview
 
-Tampermonkey userscript (`auto-approve-deploy.user.js`) that auto-approves GitHub Actions deployment gates and skips wait timers via DOM interaction.
+Tampermonkey userscript that auto-approves GitHub Actions deployment gates and skips wait timers via DOM interaction. Built with Vite + TypeScript, outputs `auto-approve-deploy.user.js` as the bundled userscript.
 
 ## Code Style
 
-- Single-file IIFE structure with section separators (`// ═══...`)
-- Vanilla JS (no build tools, no modules, no TypeScript)
+- TypeScript with strict mode, modular `src/` structure
+- Vite + `vite-plugin-monkey` for building and userscript header generation
 - Tampermonkey GM_* APIs for cross-origin requests (`GM_xmlhttpRequest`), persistent storage (`GM_getValue`/`GM_setValue`), and CSS injection (`GM_addStyle`)
 - Template literals for HTML/CSS generation; `esc()` helper for XSS prevention
 - Async/await for API calls and DOM timing; `setTimeout` for polling loops
@@ -15,22 +15,28 @@ Tampermonkey userscript (`auto-approve-deploy.user.js`) that auto-approves GitHu
 ## Architecture
 
 ```
-auto-approve-deploy.user.js   ← Single-file userscript (all logic)
-README.md                      ← User documentation (English)
-README.zh-CN.md                ← User documentation (Chinese)
+src/
+  main.ts              ← Entry point, wires all modules
+  core/
+    config.ts          ← Persistent config (GM_getValue/GM_setValue)
+    state.ts           ← Runtime state types & factory
+    log-store.ts       ← Log persistence (batch buffer, debounced flush)
+    session.ts         ← Session persistence (save/load/clear across refreshes)
+  api/
+    api.ts             ← GitHub REST API layer (GM_xmlhttpRequest)
+    skip-timers.ts     ← DOM-based skip wait timers (3 approaches)
+  ui/
+    styles.ts          ← CSS injection via GM_addStyle
+    ui.ts              ← Panel build, render, event binding
+  utils/
+    helpers.ts         ← ts(), esc(), formatDuration()
+    url.ts             ← URL parsing (owner/repo/runId)
+auto-approve-deploy.user.js      ← Build output, dev (do not edit)
+auto-approve-deploy.min.user.js  ← Build output, minified (do not edit)
+vite.config.ts       ← Vite + vite-plugin-monkey config
+README.md            ← User documentation (English)
+README.zh-CN.md      ← User documentation (Chinese)
 ```
-
-Key sections in the userscript (in order):
-1. **URL Parsing** — Extract owner/repo/run_id from page URL
-2. **Config & State** — `GM_getValue`/`GM_setValue` for persistence
-3. **Log Persistence** — Batch buffer with debounced flush
-4. **Session Persistence** — `saveSession()`/`loadSession()` for cross-refresh state
-5. **Helpers** — `ts()`, `esc()`, `recordEvent()`, `formatDuration()`
-6. **API Layer** — `GM_xmlhttpRequest` wrapper + REST endpoints
-7. **Skip Wait Timers** — DOM-based, 3 sequential approaches
-8. **Poll Loop** — Status check → approve → skip → timer display
-9. **Start/Resume/Stop** — Lifecycle management
-10. **Styles & UI** — Side panel with controls, log, summary report
 
 ## Conventions
 

@@ -2,279 +2,164 @@
 // @name         Auto-Approve Deploy Gates
 // @namespace    https://github.com/auto-deploy-gates
 // @version      1.0.0
-// @description  Automatically approve GitHub Actions deployment gates & skip wait timers
 // @author       auto-deploy
+// @description  Automatically approve GitHub Actions deployment gates & skip wait timers
 // @match        https://github.com/*/actions/runs/*
-// @grant        GM_xmlhttpRequest
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_addStyle
-// @grant        GM_registerMenuCommand
 // @connect      api.github.com
+// @grant        GM_addStyle
+// @grant        GM_getValue
+// @grant        GM_registerMenuCommand
+// @grant        GM_setValue
+// @grant        GM_xmlhttpRequest
 // @run-at       document-idle
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // URL Parsing
-  // ═══════════════════════════════════════════════════════════════════════════
-  const urlMatch = location.pathname.match(
-    /^\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)/
-  );
-  if (!urlMatch) return;
-  const [, OWNER, REPO, RUN_ID] = urlMatch;
-  const API = 'https://api.github.com';
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Persistent Config
-  // ═══════════════════════════════════════════════════════════════════════════
-  let token      = GM_getValue('gh_token', '');
-  let interval   = GM_getValue('interval', 15);
-  let cfgApprove = GM_getValue('auto_approve', true);
-  let cfgSkip    = GM_getValue('auto_skip', true);
-  let cfgSaveLog = GM_getValue('save_log', false);
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Runtime State
-  // ═══════════════════════════════════════════════════════════════════════════
-  let running         = false;
-  let pollTimer       = null;
-  let sessionApproved = 0;
-  let totalApproved   = 0;
-  let lastSkipKey     = '';
-  let monitorStartedAt = 0;   // timestamp when monitoring began
-  let pollCycle        = 0;   // incremental poll counter for log tracing
-  let sessionSkipped   = 0;   // skip timer attempts this session
-  let sessionEvents    = [];  // timeline: [{ts, type, detail}]
-  const GRACE_PERIOD   = 90;  // seconds to wait for re-run to propagate
-
-  // Log persistence per run
-  const logStoreKey = `aad_log_${RUN_ID}`;
-  let _logBuffer = [];  // batch buffer to reduce GM_setValue calls
+  function parseUrl() {
+    const urlMatch = location.pathname.match(
+      /^\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)/
+    );
+    if (!urlMatch) return null;
+    const [, owner, repo, runId] = urlMatch;
+    return { owner, repo, runId };
+  }
+  function loadConfig() {
+    return {
+      token: GM_getValue("gh_token", ""),
+      interval: GM_getValue("interval", 15),
+      autoApprove: GM_getValue("auto_approve", true),
+      autoSkip: GM_getValue("auto_skip", true),
+      saveLog: GM_getValue("save_log", false)
+    };
+  }
+  function saveConfigField(key, value) {
+    const keyMap = {
+      token: "gh_token",
+      interval: "interval",
+      autoApprove: "auto_approve",
+      autoSkip: "auto_skip",
+      saveLog: "save_log"
+    };
+    GM_setValue(keyMap[key], value);
+  }
+  const GRACE_PERIOD = 90;
+  function createState() {
+    return {
+      running: false,
+      pollTimer: null,
+      sessionApproved: 0,
+      totalApproved: 0,
+      lastSkipKey: "",
+      monitorStartedAt: 0,
+      pollCycle: 0,
+      sessionSkipped: 0,
+      sessionEvents: []
+    };
+  }
+  let _logBuffer = [];
   let _logFlushTimer = null;
+  let _saveLog = false;
+  let _logStoreKey = "";
+  function initLogStore(runId, saveLog) {
+    _logStoreKey = `aad_log_${runId}`;
+    _saveLog = saveLog;
+  }
+  function setLogSaving(enabled) {
+    _saveLog = enabled;
+  }
   function _flushLogBuffer() {
     if (_logBuffer.length === 0) return;
-    const arr = GM_getValue(logStoreKey, []);
-    // Migration: handle old string format
-    const existing = typeof arr === 'string'
-      ? (arr ? arr.split('\n').filter(Boolean) : [])
-      : arr;
+    const arr = GM_getValue(_logStoreKey, []);
+    const existing = typeof arr === "string" ? arr ? arr.split("\n").filter(Boolean) : [] : arr;
     existing.push(..._logBuffer);
-    // Cap at 2000 entries
-    if (existing.length > 2000) existing.splice(0, existing.length - 2000);
-    GM_setValue(logStoreKey, existing);
+    if (existing.length > 2e3) existing.splice(0, existing.length - 2e3);
+    GM_setValue(_logStoreKey, existing);
     _logBuffer = [];
   }
   function appendLogToStore(line) {
-    if (!cfgSaveLog) return;
+    if (!_saveLog) return;
     _logBuffer.push(line);
-    // Debounce: flush after 500ms of no new writes, or immediately if buffer is large
     if (_logBuffer.length >= 20) {
       _flushLogBuffer();
     } else {
-      clearTimeout(_logFlushTimer);
+      if (_logFlushTimer) clearTimeout(_logFlushTimer);
       _logFlushTimer = setTimeout(_flushLogBuffer, 500);
     }
   }
   function getStoredLogs() {
-    // Flush any pending buffer first
     _flushLogBuffer();
-    const data = GM_getValue(logStoreKey, []);
-    // Migration: handle old string format
-    if (typeof data === 'string') {
-      return data ? data.split('\n').filter(Boolean) : [];
+    const data = GM_getValue(_logStoreKey, []);
+    if (typeof data === "string") {
+      return data ? data.split("\n").filter(Boolean) : [];
     }
     return data;
   }
-  function downloadLog() {
+  function downloadLog(runId) {
     const lines = getStoredLogs();
     if (lines.length === 0) {
-      alert('当前 Run 暂无日志记录');
+      alert("当前 Run 暂无日志记录");
       return;
     }
-    const content = lines.join('\n') + '\n';
-    const blob = new Blob([content], { type: 'text/plain' });
+    const content = lines.join("\n") + "\n";
+    const blob = new Blob([content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `aad-run-${RUN_ID}.log`;
+    a.download = `aad-run-${runId}.log`;
     a.click();
     URL.revokeObjectURL(url);
   }
-  function restoreLogsToPanel() {
-    const lines = getStoredLogs();
-    if (lines.length === 0) return;
-    // Show a separator and last N lines
-    const maxRestore = 50;
-    const recent = lines.slice(-maxRestore);
-    const $log = document.getElementById('aad-log');
-    if (!$log) return;
-    const sep = document.createElement('div');
-    sep.className = 'aad-log-entry';
-    sep.innerHTML = `<span class="aad-log-time">───</span> <span class="aad-log-info">── 以下为刷新前日志 (最近 ${recent.length}/${lines.length} 条) ──</span>`;
-    $log.appendChild(sep);
-    recent.forEach((line) => {
-      // Parse stored format: [HH:MM:SS] [level] msg
-      const m = line.match(/^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.*)$/);
-      const entry = document.createElement('div');
-      entry.className = 'aad-log-entry';
-      if (m) {
-        entry.innerHTML = `<span class="aad-log-time">${esc(m[1])}</span> <span class="aad-log-${m[2]}">${esc(m[3])}</span>`;
-      } else {
-        entry.innerHTML = `<span class="aad-log-info">${esc(line)}</span>`;
-      }
-      $log.appendChild(entry);
-    });
-    const sep2 = document.createElement('div');
-    sep2.className = 'aad-log-entry';
-    sep2.innerHTML = `<span class="aad-log-time">───</span> <span class="aad-log-info">── 当前会话开始 ──</span>`;
-    $log.appendChild(sep2);
-    $log.scrollTop = $log.scrollHeight;
+  function saveRunningState(runId, on) {
+    const stateKey = `aad_running_${runId}`;
+    GM_setValue(stateKey, on ? Date.now() : 0);
   }
-
-  // Persist running state per run so script auto-resumes after page refresh
-  const stateKey = `aad_running_${RUN_ID}`;
-  function saveRunningState(on) {
-    if (on) {
-      GM_setValue(stateKey, Date.now());
-    } else {
-      GM_setValue(stateKey, 0);
-    }
-  }
-  function wasRunning() {
+  function wasRunning(runId) {
+    const stateKey = `aad_running_${runId}`;
     const savedTs = GM_getValue(stateKey, 0);
-    // Consider stale if saved more than 30 minutes ago (page was probably closed)
-    return savedTs > 0 && (Date.now() - savedTs) < 30 * 60 * 1000;
+    return savedTs > 0 && Date.now() - savedTs < 30 * 60 * 1e3;
   }
-
-  // Persist session counters across page refreshes
-  const sessionKey = `aad_session_${RUN_ID}`;
-  function saveSession() {
+  function saveSession(runId, state) {
+    const sessionKey = `aad_session_${runId}`;
     GM_setValue(sessionKey, {
-      approved: sessionApproved,
-      skipped: sessionSkipped,
-      events: sessionEvents,
-      startedAt: monitorStartedAt,
-      pollCycle,
-      lastSkipKey,
+      approved: state.sessionApproved,
+      skipped: state.sessionSkipped,
+      events: state.sessionEvents,
+      startedAt: state.monitorStartedAt,
+      pollCycle: state.pollCycle,
+      lastSkipKey: state.lastSkipKey
     });
   }
-  function loadSession() {
+  function loadSession(runId, state) {
+    const sessionKey = `aad_session_${runId}`;
     const s = GM_getValue(sessionKey, null);
     if (!s) return false;
-    sessionApproved  = s.approved  || 0;
-    sessionSkipped   = s.skipped   || 0;
-    sessionEvents    = s.events    || [];
-    monitorStartedAt = s.startedAt || Date.now();
-    pollCycle        = s.pollCycle || 0;
-    lastSkipKey      = s.lastSkipKey || '';
+    state.sessionApproved = s.approved || 0;
+    state.sessionSkipped = s.skipped || 0;
+    state.sessionEvents = s.events || [];
+    state.monitorStartedAt = s.startedAt || Date.now();
+    state.pollCycle = s.pollCycle || 0;
+    state.lastSkipKey = s.lastSkipKey || "";
     return true;
   }
-  function clearSession() {
+  function clearSession(runId) {
+    const sessionKey = `aad_session_${runId}`;
     GM_setValue(sessionKey, null);
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Helpers
-  // ═══════════════════════════════════════════════════════════════════════════
-  const ts = () =>
-    new Date().toLocaleTimeString('en-US', { hour12: false });
-
-  function esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
-
-  function recordEvent(type, detail) {
-    sessionEvents.push({ ts: Date.now(), type, detail });
-    saveSession();
-  }
-
-  function formatDuration(ms) {
-    const secs = Math.floor(ms / 1000);
-    if (secs < 60) return `${secs}s`;
-    const mins = Math.floor(secs / 60);
-    const remSecs = secs % 60;
-    if (mins < 60) return `${mins}m ${remSecs}s`;
-    const hours = Math.floor(mins / 60);
-    const remMins = mins % 60;
-    return `${hours}h ${remMins}m`;
-  }
-
-  function generateSummary(conclusion) {
-    const duration = Date.now() - monitorStartedAt;
-    const $summary = document.getElementById('aad-summary');
-    if (!$summary) return;
-
-    const timelineHtml = sessionEvents.map((ev) => {
-      const t = new Date(ev.ts).toLocaleTimeString('en-US', { hour12: false });
-      const icon = ev.type === 'approve' ? '✅' :
-                   ev.type === 'skip' ? '⏭' :
-                   ev.type === 'error' ? '❌' :
-                   ev.type === 'start' ? '🚀' :
-                   ev.type === 'resume' ? '🔄' :
-                   ev.type === 'complete' ? '🏁' : '📌';
-      return `<div class="aad-timeline-item"><span class="aad-log-time">${t}</span> ${icon} ${esc(ev.detail)}</div>`;
-    }).join('');
-
-    const ok = conclusion === 'success';
-    const statusIcon = ok ? '✅' : '❌';
-    const statusClass = ok ? 'aad-log-ok' : 'aad-log-err';
-
-    $summary.innerHTML = `
-      <div class="aad-summary-header">📊 执行报告</div>
-      <div class="aad-summary-grid">
-        <div class="aad-summary-item">
-          <span class="aad-summary-label">结果</span>
-          <span class="${statusClass}">${statusIcon} ${esc(conclusion || 'unknown')}</span>
-        </div>
-        <div class="aad-summary-item">
-          <span class="aad-summary-label">总耗时</span>
-          <span>${formatDuration(duration)}</span>
-        </div>
-        <div class="aad-summary-item">
-          <span class="aad-summary-label">轮询次数</span>
-          <span>${pollCycle}</span>
-        </div>
-        <div class="aad-summary-item">
-          <span class="aad-summary-label">审批通过</span>
-          <span class="aad-log-ok">${sessionApproved}</span>
-        </div>
-        <div class="aad-summary-item">
-          <span class="aad-summary-label">跳过计时器</span>
-          <span>${sessionSkipped}</span>
-        </div>
-        <div class="aad-summary-item">
-          <span class="aad-summary-label">轮询间隔</span>
-          <span>${interval}s</span>
-        </div>
-      </div>
-      ${sessionEvents.length > 0 ? `
-        <div class="aad-summary-header" style="margin-top:8px">📋 执行时间线</div>
-        <div class="aad-timeline">${timelineHtml}</div>
-      ` : ''}
-    `;
-    $summary.style.display = 'block';
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // GitHub REST API  (cross-origin via GM_xmlhttpRequest)
-  // ═══════════════════════════════════════════════════════════════════════════
-  function api(method, path, body) {
+  const API = "https://api.github.com";
+  function api(method, path, token, body) {
     return new Promise((resolve, reject) => {
-      if (!token) return reject(new Error('No GitHub token configured'));
+      if (!token) return reject(new Error("No GitHub token configured"));
       GM_xmlhttpRequest({
         method,
         url: `${API}${path}`,
         headers: {
           Authorization: `token ${token}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
+          Accept: "application/vnd.github+json",
+          "Content-Type": "application/json"
         },
-        data: body ? JSON.stringify(body) : undefined,
+        data: body ? JSON.stringify(body) : void 0,
         onload(r) {
           if (r.status >= 200 && r.status < 300) {
             try {
@@ -287,436 +172,176 @@
           }
         },
         onerror() {
-          reject(new Error('Network error'));
-        },
+          reject(new Error("Network error"));
+        }
       });
     });
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Core API Functions
-  // ═══════════════════════════════════════════════════════════════════════════
-  async function fetchRunInfo() {
-    return api('GET', `/repos/${OWNER}/${REPO}/actions/runs/${RUN_ID}`);
+  function fetchRunInfo(owner, repo, runId, token) {
+    return api("GET", `/repos/${owner}/${repo}/actions/runs/${runId}`, token);
   }
-
-  async function fetchPending() {
-    return api(
-      'GET',
-      `/repos/${OWNER}/${REPO}/actions/runs/${RUN_ID}/pending_deployments`
-    );
+  function fetchPending(owner, repo, runId, token) {
+    return api("GET", `/repos/${owner}/${repo}/actions/runs/${runId}/pending_deployments`, token);
   }
-
-  async function approveDeployments(envIds) {
-    return api(
-      'POST',
-      `/repos/${OWNER}/${REPO}/actions/runs/${RUN_ID}/pending_deployments`,
-      {
-        environment_ids: envIds,
-        state: 'approved',
-        comment: 'Auto-approved by Auto-Approve Deploy Gates',
-      }
-    );
+  function approveDeployments(owner, repo, runId, token, envIds) {
+    return api("POST", `/repos/${owner}/${repo}/actions/runs/${runId}/pending_deployments`, token, {
+      environment_ids: envIds,
+      state: "approved",
+      comment: "Auto-approved by Auto-Approve Deploy Gates"
+    });
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Skip Wait Timers  (DOM-based — uses browser session cookies)
-  //
-  // Three approaches attempted in order:
-  //   1. Find <form action="…/environments/skip"> and submit via fetch
-  //   2. Find "Start all waiting jobs" button and click it
-  //   3. Construct POST from CSRF meta + hidden gate_request[] inputs
-  // ═══════════════════════════════════════════════════════════════════════════
-  async function trySkipWaitTimers() {
+  function fetchJobs(owner, repo, runId, token) {
+    return api("GET", `/repos/${owner}/${repo}/actions/runs/${runId}/jobs?per_page=100`, token);
+  }
+  async function trySkipWaitTimers(owner, repo, addLog2) {
     try {
-      // Wait for dynamic rendering to settle
-      await new Promise((r) => setTimeout(r, 2000));
-
-      // ── DEBUG: dump relevant DOM elements ──────────────────────────────
-      const allForms = [...document.querySelectorAll('form')];
+      await new Promise((r) => setTimeout(r, 2e3));
+      const allForms = [...document.querySelectorAll("form")];
       const skipForms = allForms.filter((f) => {
-        const a = f.getAttribute('action') || '';
-        return a.includes('environment') || a.includes('skip');
+        const a = f.getAttribute("action") || "";
+        return a.includes("environment") || a.includes("skip");
       });
-      addLog(`[skip-debug] Forms total: ${allForms.length}, skip-related: ${skipForms.length}`);
-      skipForms.forEach((f) =>
-        addLog(`[skip-debug]   form action="${f.getAttribute('action')}"`)
+      addLog2(`[skip-debug] Forms total: ${allForms.length}, skip-related: ${skipForms.length}`);
+      skipForms.forEach(
+        (f) => addLog2(`[skip-debug]   form action="${f.getAttribute("action")}"`)
       );
-
       const allBtns = [...document.querySelectorAll('button, [role="button"], summary, a.btn')];
-      const relevantBtns = allBtns.filter((b) =>
-        /start|skip|waiting|timer|deploy|approve|consequence/i.test(b.textContent || '')
+      const relevantBtns = allBtns.filter(
+        (b) => /start|skip|waiting|timer|deploy|approve|consequence/i.test(b.textContent || "")
       );
-      addLog(`[skip-debug] Relevant buttons: ${relevantBtns.length}`);
-      relevantBtns.forEach((b) =>
-        addLog(`[skip-debug]   <${b.tagName.toLowerCase()}> "${(b.textContent || '').trim().slice(0, 80)}"`)
+      addLog2(`[skip-debug] Relevant buttons: ${relevantBtns.length}`);
+      relevantBtns.forEach(
+        (b) => addLog2(`[skip-debug]   <${b.tagName.toLowerCase()}> "${(b.textContent || "").trim().slice(0, 80)}"`)
       );
-
       const gateInputs = document.querySelectorAll('input[name="gate_request[]"]');
-      addLog(`[skip-debug] gate_request[] inputs: ${gateInputs.length}`);
-      gateInputs.forEach((i) => addLog(`[skip-debug]   value="${i.value}"`));
-
-      // ── Approach 1 (preferred): click "Start all waiting jobs" button ──
+      addLog2(`[skip-debug] gate_request[] inputs: ${gateInputs.length}`);
+      gateInputs.forEach((i) => addLog2(`[skip-debug]   value="${i.value}"`));
       for (const btn of allBtns) {
-        const text = (btn.textContent || '').trim();
+        const text = (btn.textContent || "").trim();
         if (/start all waiting/i.test(text)) {
-          addLog(`[skip] Approach 1: clicking "${text}"`);
+          addLog2(`[skip] Approach 1: clicking "${text}"`);
           btn.click();
-
-          // Wait for #gates-break-glass-dialog to appear
           let dialog = null;
           for (let i = 0; i < 10; i++) {
-            dialog = document.querySelector('#gates-break-glass-dialog[open], dialog[open].js-gates-dialog');
+            dialog = document.querySelector("#gates-break-glass-dialog[open], dialog[open].js-gates-dialog");
             if (dialog) break;
             await new Promise((r) => setTimeout(r, 500));
           }
-
           if (!dialog) {
-            addLog('[skip] Approach 1: dialog did not appear after clicking button', 'warn');
+            addLog2("[skip] Approach 1: dialog did not appear after clicking button", "warn");
             break;
           }
-          addLog(`[skip]   dialog found: #${dialog.id}`);
-
-          // Step 1: check all environment checkboxes
+          addLog2(`[skip]   dialog found: #${dialog.id}`);
           const checkboxes = dialog.querySelectorAll(
             'input[type="checkbox"][name="gate_request[]"], input.js-gates-dialog-environment-checkbox'
           );
-          addLog(`[skip]   checkboxes found: ${checkboxes.length}`);
+          addLog2(`[skip]   checkboxes found: ${checkboxes.length}`);
           checkboxes.forEach((cb) => {
             if (!cb.checked) {
               cb.click();
-              addLog(`[skip]   checked: ${cb.value} (${cb.id})`);
+              addLog2(`[skip]   checked: ${cb.value} (${cb.id})`);
             } else {
-              addLog(`[skip]   already checked: ${cb.value}`);
+              addLog2(`[skip]   already checked: ${cb.value}`);
             }
           });
-
           if (checkboxes.length === 0) {
-            addLog('[skip] Approach 1: no checkboxes found in dialog', 'warn');
+            addLog2("[skip] Approach 1: no checkboxes found in dialog", "warn");
             break;
           }
-
-          // Small delay for any JS handlers to process checkbox change
           await new Promise((r) => setTimeout(r, 300));
-
-          // Step 2: click the confirm/submit button
           const submitBtn = dialog.querySelector(
             'button[type="submit"], button.btn-danger, button[data-target="break-glass-deployments"]'
           );
           if (submitBtn) {
-            const st = (submitBtn.textContent || '').trim();
-            addLog(`[skip]   clicking submit: "${st.slice(0, 60)}"`, 'ok');
+            const st = (submitBtn.textContent || "").trim();
+            addLog2(`[skip]   clicking submit: "${st.slice(0, 60)}"`, "ok");
             submitBtn.click();
-
-            // Wait for form submission to process
-            await new Promise((r) => setTimeout(r, 3000));
+            await new Promise((r) => setTimeout(r, 3e3));
             return true;
           }
-
-          addLog('[skip] Approach 1: no submit button found in dialog', 'warn');
+          addLog2("[skip] Approach 1: no submit button found in dialog", "warn");
           break;
         }
       }
-
-      // ── Approach 2: submit skip form WITH gate_request[] appended ─────
       for (const form of skipForms) {
-        const action = form.getAttribute('action') || '';
-        if (action.endsWith('/skip')) {
-          addLog(`[skip] Approach 2: submitting form → ${action}`);
+        const action = form.getAttribute("action") || "";
+        if (action.endsWith("/skip")) {
+          addLog2(`[skip] Approach 2: submitting form → ${action}`);
           const formData = new FormData(form);
-
-          // Append gate_request[] from anywhere in the DOM (they may be outside the form)
           let addedGates = 0;
-          if (!formData.has('gate_request[]')) {
+          if (!formData.has("gate_request[]")) {
             gateInputs.forEach((i) => {
-              formData.append('gate_request[]', i.value);
+              formData.append("gate_request[]", i.value);
               addedGates++;
             });
           }
-          addLog(`[skip]   form fields: ${[...formData.keys()].join(', ')} (added ${addedGates} gate_request from DOM)`);
-
-          if (!formData.has('gate_request[]')) {
-            addLog(`[skip] Approach 2: no gate_request[] — skipping`, 'warn');
+          addLog2(`[skip]   form fields: ${[...formData.keys()].join(", ")} (added ${addedGates} gate_request from DOM)`);
+          if (!formData.has("gate_request[]")) {
+            addLog2(`[skip] Approach 2: no gate_request[] — skipping`, "warn");
             continue;
           }
-
           const resp = await fetch(action, {
-            method: 'POST',
+            method: "POST",
             body: new URLSearchParams(formData),
-            credentials: 'same-origin',
-            redirect: 'follow',
+            credentials: "same-origin",
+            redirect: "follow"
           });
-          addLog(`[skip]   response: ${resp.status} ${resp.type} ${resp.url}`);
+          addLog2(`[skip]   response: ${resp.status} ${resp.type} ${resp.url}`);
           if (resp.ok || resp.redirected) {
-            addLog(`[skip] Approach 2: form submitted OK`, 'ok');
+            addLog2(`[skip] Approach 2: form submitted OK`, "ok");
             return true;
           }
-          addLog(`[skip] Approach 2: form submit failed (${resp.status})`, 'warn');
+          addLog2(`[skip] Approach 2: form submit failed (${resp.status})`, "warn");
         }
       }
-
-      // ── Approach 3: manual POST from CSRF in form + gate_request[] ────
-      // Since <meta name="csrf-token"> may not exist, extract from the skip form's hidden input
-      const csrfInput = skipForms.length > 0
-        ? skipForms[0].querySelector('input[name="authenticity_token"]')
-        : null;
+      const csrfInput = skipForms.length > 0 ? skipForms[0].querySelector('input[name="authenticity_token"]') : null;
       if (csrfInput && gateInputs.length > 0) {
         const csrf = csrfInput.value;
-        addLog(`[skip] Approach 3: manual POST with CSRF from form + ${gateInputs.length} gate(s)`);
-
+        addLog2(`[skip] Approach 3: manual POST with CSRF from form + ${gateInputs.length} gate(s)`);
         const body = new URLSearchParams();
-        body.append('authenticity_token', csrf);
-        body.append('comment', 'Auto-skipped by Auto-Approve Deploy Gates');
-        gateInputs.forEach((i) => body.append('gate_request[]', i.value));
-
-        const skipUrl = `/${OWNER}/${REPO}/environments/skip`;
-        addLog(`[skip]   POST → ${skipUrl}`);
+        body.append("authenticity_token", csrf);
+        body.append("comment", "Auto-skipped by Auto-Approve Deploy Gates");
+        gateInputs.forEach((i) => body.append("gate_request[]", i.value));
+        const skipUrl = `/${owner}/${repo}/environments/skip`;
+        addLog2(`[skip]   POST → ${skipUrl}`);
         const resp = await fetch(skipUrl, {
-          method: 'POST',
+          method: "POST",
           body,
-          credentials: 'same-origin',
-          redirect: 'follow',
+          credentials: "same-origin",
+          redirect: "follow"
         });
-        addLog(`[skip]   response: ${resp.status} ${resp.type} ${resp.url}`);
+        addLog2(`[skip]   response: ${resp.status} ${resp.type} ${resp.url}`);
         if (resp.ok || resp.redirected) {
-          addLog(`[skip] Approach 3: POST succeeded`, 'ok');
+          addLog2(`[skip] Approach 3: POST succeeded`, "ok");
           return true;
         }
-        addLog(`[skip] Approach 3: POST failed (${resp.status})`, 'warn');
+        addLog2(`[skip] Approach 3: POST failed (${resp.status})`, "warn");
       }
-
-      addLog('[skip] All approaches exhausted — no skip controls found', 'warn');
+      addLog2("[skip] All approaches exhausted — no skip controls found", "warn");
       return false;
     } catch (e) {
-      addLog(`[skip] Error: ${e.message}`, 'warn');
+      addLog2(`[skip] Error: ${e.message}`, "warn");
       return false;
     }
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Main Poll Loop
-  // ═══════════════════════════════════════════════════════════════════════════
-  async function poll() {
-    if (!running) return;
-    pollCycle++;
-    // Keep running-state timestamp fresh so it survives page reloads
-    saveRunningState(true);
-    addLog(`[poll #${pollCycle}] polling...`);
-    try {
-      // 1. Check run status
-      const run = await fetchRunInfo();
-      renderRunInfo(run);
-
-      if (run.status === 'completed') {
-        // Grace period: if we just started and haven't done anything yet,
-        // the run may appear "completed" because a re-run hasn't propagated.
-        const elapsed = (Date.now() - monitorStartedAt) / 1000;
-        if (sessionApproved === 0 && elapsed < GRACE_PERIOD) {
-          const remaining = Math.ceil(GRACE_PERIOD - elapsed);
-          addLog(`⏳ Run shows completed but grace period active (${remaining}s left) — re-run may not have propagated yet`, 'warn');
-          setStatus(`⏳ Waiting for re-run to start... (${remaining}s)`);
-          // Skip pending fetch during grace period — run is "completed" so nothing to do
-          if (running) {
-            pollTimer = setTimeout(poll, interval * 1000);
-          }
-          return;
-        } else {
-          const ok = run.conclusion === 'success';
-          recordEvent('complete', `Run ${ok ? 'succeeded' : 'failed'}: ${run.conclusion}`);
-          addLog(
-            ok
-              ? `✅ Run completed! (session: ${sessionApproved}, total: ${totalApproved})`
-              : `❌ Run finished: ${run.conclusion} (session: ${sessionApproved}, total: ${totalApproved})`,
-            ok ? 'ok' : 'err'
-          );
-          generateSummary(run.conclusion);
-          stop();
-          return;
-        }
-      }
-
-      // 2. Fetch pending deployments
-      const pending = await fetchPending();
-      const approvable = pending.filter(
-        (d) => d.current_user_can_approve
-      );
-
-      addLog(`[poll] status=${run.status}, pending=${pending.length}, approvable=${approvable.length}`);
-
-      // 3. Auto-approve
-      if (cfgApprove && approvable.length > 0) {
-        const envIds = approvable.map((d) => d.environment.id);
-        const envNames = approvable
-          .map((d) => d.environment.name)
-          .join(', ');
-        addLog(`Found ${approvable.length} approvable gate(s): ${envNames}`);
-
-        try {
-          await approveDeployments(envIds);
-          addLog(`✅ Approved: ${envNames}`, 'ok');
-          sessionApproved += approvable.length;
-          totalApproved += approvable.length;
-          recordEvent('approve', `Approved: ${envNames}`);
-          renderCounters();
-          // No page refresh needed — API-only, schedule quick re-poll
-          if (running) {
-            pollTimer = setTimeout(poll, 5000);
-          }
-          return;
-        } catch (e) {
-          addLog(`⚠️ Approve failed: ${e.message}`, 'warn');
-        }
-      } else if (pending.length > 0) {
-        // 4. Skip wait timers (DOM-based)
-        const waitGates = pending.filter(
-          (d) =>
-            !d.current_user_can_approve &&
-            d.wait_timer &&
-            d.wait_timer > 0
-        );
-
-        if (cfgSkip && waitGates.length > 0) {
-          const skipKey = waitGates
-            .map((d) => d.environment.name)
-            .sort()
-            .join(',');
-          if (skipKey !== lastSkipKey) {
-            lastSkipKey = skipKey;
-            addLog(`Detected wait timer(s): ${skipKey}`);
-            addLog('Attempting to skip via page DOM...');
-            const skipped = await trySkipWaitTimers();
-            if (skipped) {
-              addLog('✅ Skip attempted — checking result...', 'ok');
-              sessionSkipped++;
-              recordEvent('skip', `Skipped wait timers: ${skipKey}`);
-              saveSession();
-              softRefresh();
-            } else {
-              addLog(
-                '⚠️ Skip controls not found in DOM. Waiting for timer(s) to expire.',
-                'warn'
-              );
-            }
-          }
-        }
-
-        // Show timer countdown
-        const timerText = pending
-          .filter((d) => !d.current_user_can_approve)
-          .map((d) => {
-            if (
-              d.wait_timer > 0 &&
-              d.wait_timer_started_at
-            ) {
-              const totalSecs = d.wait_timer * 60;
-              const started =
-                new Date(d.wait_timer_started_at).getTime() / 1000;
-              const remaining = Math.ceil(
-                started + totalSecs - Date.now() / 1000
-              );
-              if (remaining > 0) {
-                const m = Math.floor(remaining / 60);
-                const s = remaining % 60;
-                return `${esc(d.environment.name)} ⏱ ${m}m${s}s`;
-              }
-              return `${esc(d.environment.name)} ⏱ expired`;
-            }
-            return `${esc(d.environment.name)} (waiting)`;
-          })
-          .join(' · ');
-
-        setStatus(`⏳ ${pending.length} pending — ${timerText}`);
-      } else {
-        setStatus(`🔄 Monitoring... (${run.status})`);
-      }
-    } catch (e) {
-      addLog(`⚠️ Poll error: ${e.message}`, 'warn');
-    }
-
-    if (running) {
-      pollTimer = setTimeout(poll, interval * 1000);
-    }
+  const ts = () => ( new Date()).toLocaleTimeString("en-US", { hour12: false });
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
   }
-
-  function softRefresh() {
-    // Force a full page reload to pick up updated DOM state
-    addLog('Refreshing page...');
-    location.reload();
+  function formatDuration(ms) {
+    const secs = Math.floor(ms / 1e3);
+    if (secs < 60) return `${secs}s`;
+    const mins = Math.floor(secs / 60);
+    const remSecs = secs % 60;
+    if (mins < 60) return `${mins}m ${remSecs}s`;
+    const hours = Math.floor(mins / 60);
+    const remMins = mins % 60;
+    return `${hours}h ${remMins}m`;
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Start / Stop
-  // ═══════════════════════════════════════════════════════════════════════════
-  function start() {
-    if (!token) {
-      promptToken();
-      return;
-    }
-    running = true;
-    sessionApproved = 0;
-    sessionSkipped = 0;
-    sessionEvents = [];
-    lastSkipKey = '';
-    pollCycle = 0;
-    monitorStartedAt = Date.now();
-    clearSession();
-    saveRunningState(true);
-    // Hide previous summary
-    const $summary = document.getElementById('aad-summary');
-    if ($summary) $summary.style.display = 'none';
-    recordEvent('start', `Started (interval=${interval}s, approve=${cfgApprove}, skip=${cfgSkip})`);
-    addLog(`🚀 Started monitoring (interval=${interval}s, approve=${cfgApprove}, skip=${cfgSkip}, log=${cfgSaveLog})`);
-    renderToggle();
-    poll();
-  }
-
-  function resume() {
-    if (!token) {
-      promptToken();
-      return;
-    }
-    running = true;
-    loadSession();
-    saveRunningState(true);
-    // Hide previous summary
-    const $summary = document.getElementById('aad-summary');
-    if ($summary) $summary.style.display = 'none';
-    recordEvent('resume', `Resumed after page refresh`);
-    addLog(`🚀 Started monitoring (interval=${interval}s, approve=${cfgApprove}, skip=${cfgSkip}, log=${cfgSaveLog})`);
-    renderToggle();
-    renderCounters();
-    poll();
-  }
-
-  function stop() {
-    running = false;
-    saveRunningState(false);
-    if (pollTimer) {
-      clearTimeout(pollTimer);
-      pollTimer = null;
-    }
-    addLog(`⏹ Stopped (cycles=${pollCycle}, session=${sessionApproved})`);
-    saveSession();  // persist final state for summary
-    renderToggle();
-  }
-
-  function promptToken() {
-    const t = prompt(
-      'Enter your GitHub token (run `gh auth token` in terminal):',
-      token
-    );
-    if (t && t.trim()) {
-      token = t.trim();
-      GM_setValue('gh_token', token);
-      addLog('🔑 Token saved');
-      start();
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Styles
-  // ═══════════════════════════════════════════════════════════════════════════
-  GM_addStyle(`
+  function injectStyles() {
+    GM_addStyle(`
     /* ── Side Panel ───────────────────────────────────────── */
     #aad-panel {
       position: fixed !important;
@@ -962,13 +587,11 @@
     .aad-log-warn  { color: #d29922; }
     .aad-log-err   { color: #f85149; }
   `);
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Build UI
-  // ═══════════════════════════════════════════════════════════════════════════
-  const panel = document.createElement('div');
-  panel.id = 'aad-panel';
-  panel.innerHTML = `
+  }
+  function buildUI(runId, config) {
+    const panel = document.createElement("div");
+    panel.id = "aad-panel";
+    panel.innerHTML = `
     <div id="aad-header">
       <span class="aad-title">🚀 Auto-Approve Deploy</span>
       <span class="aad-btns">
@@ -981,11 +604,11 @@
       <div id="aad-controls">
         <button id="aad-toggle-btn" class="start">▶ Start</button>
         <div id="aad-interval-wrap">
-          ⏱ <input id="aad-interval-input" type="number" min="5" max="300" value="${interval}">s
+          ⏱ <input id="aad-interval-input" type="number" min="5" max="300" value="${config.interval}">s
         </div>
-        <label><input type="checkbox" id="aad-chk-approve" ${cfgApprove ? 'checked' : ''}> Approve</label>
-        <label><input type="checkbox" id="aad-chk-skip"    ${cfgSkip ? 'checked' : ''}> Skip timers</label>
-        <label><input type="checkbox" id="aad-chk-savelog" ${cfgSaveLog ? 'checked' : ''}> 💾 Log</label>
+        <label><input type="checkbox" id="aad-chk-approve" ${config.autoApprove ? "checked" : ""}> Approve</label>
+        <label><input type="checkbox" id="aad-chk-skip"    ${config.autoSkip ? "checked" : ""}> Skip timers</label>
+        <label><input type="checkbox" id="aad-chk-savelog" ${config.saveLog ? "checked" : ""}> 💾 Log</label>
         <button id="aad-dl-log-btn" title="Download log file">📥</button>
         <button id="aad-token-btn">🔑 Token</button>
       </div>
@@ -993,223 +616,404 @@
         <span id="aad-status-text">Idle</span>
         <span class="aad-counters">Session: <strong id="aad-session-cnt">0</strong> · Total: <strong id="aad-total-cnt">0</strong></span>
       </div>
-      <div id="aad-log-path">💾 日志将保存至浏览器下载目录: aad-run-${RUN_ID}.log</div>
+      <div id="aad-log-path">💾 日志将保存至浏览器下载目录: aad-run-${runId}.log</div>
       <div id="aad-summary"></div>
       <div id="aad-log"></div>
     </div>
   `;
-  document.body.appendChild(panel);
-
-  // ── Collapse Tab (always visible on right edge) ───────────────────────────
-  const tab = document.createElement('div');
-  tab.id = 'aad-tab';
-  tab.className = 'shifted';
-  tab.textContent = '◀ AAD';
-  tab.title = 'Toggle Auto-Approve Deploy panel';
-  document.body.appendChild(tab);
-
-  // ── Element references ────────────────────────────────────────────────────
-  const $info       = document.getElementById('aad-info');
-  const $toggleBtn  = document.getElementById('aad-toggle-btn');
-  const $intervalIn = document.getElementById('aad-interval-input');
-  const $chkApprove = document.getElementById('aad-chk-approve');
-  const $chkSkip    = document.getElementById('aad-chk-skip');
-  const $chkSaveLog = document.getElementById('aad-chk-savelog');
-  const $dlLogBtn   = document.getElementById('aad-dl-log-btn');
-  const $logPath    = document.getElementById('aad-log-path');
-  const $statusText = document.getElementById('aad-status-text');
-  const $sessionCnt = document.getElementById('aad-session-cnt');
-  const $totalCnt   = document.getElementById('aad-total-cnt');
-  const $log        = document.getElementById('aad-log');
-
-  // Show/hide log path hint based on cfgSaveLog
-  if (cfgSaveLog) $logPath.style.display = 'block';
-
-  // ── Collapse / Expand ─────────────────────────────────────────────────────
-  function togglePanel() {
-    const isCollapsed = panel.classList.toggle('collapsed');
-    tab.classList.toggle('shifted', !isCollapsed);
-    tab.textContent = isCollapsed ? '◀ AAD' : '▶';
+    document.body.appendChild(panel);
+    const tab = document.createElement("div");
+    tab.id = "aad-tab";
+    tab.className = "shifted";
+    tab.textContent = "◀ AAD";
+    tab.title = "Toggle Auto-Approve Deploy panel";
+    document.body.appendChild(tab);
+    const el = {
+      panel,
+      tab,
+      $info: document.getElementById("aad-info"),
+      $toggleBtn: document.getElementById("aad-toggle-btn"),
+      $intervalIn: document.getElementById("aad-interval-input"),
+      $chkApprove: document.getElementById("aad-chk-approve"),
+      $chkSkip: document.getElementById("aad-chk-skip"),
+      $chkSaveLog: document.getElementById("aad-chk-savelog"),
+      $dlLogBtn: document.getElementById("aad-dl-log-btn"),
+      $logPath: document.getElementById("aad-log-path"),
+      $statusText: document.getElementById("aad-status-text"),
+      $sessionCnt: document.getElementById("aad-session-cnt"),
+      $totalCnt: document.getElementById("aad-total-cnt"),
+      $log: document.getElementById("aad-log"),
+      $summary: document.getElementById("aad-summary"),
+      $tokenBtn: document.getElementById("aad-token-btn")
+    };
+    if (config.saveLog) el.$logPath.style.display = "block";
+    function togglePanel() {
+      const isCollapsed = panel.classList.toggle("collapsed");
+      tab.classList.toggle("shifted", !isCollapsed);
+      tab.textContent = isCollapsed ? "◀ AAD" : "▶";
+    }
+    tab.addEventListener("click", togglePanel);
+    document.getElementById("aad-collapse-btn").addEventListener("click", togglePanel);
+    return el;
   }
-
-  tab.addEventListener('click', togglePanel);
-  document.getElementById('aad-collapse-btn').addEventListener('click', togglePanel);
-  document.getElementById('aad-close-btn').addEventListener('click', () => {
-    stop();
-    panel.remove();
-    tab.remove();
-  });
-
-  // ── Controls ──────────────────────────────────────────────────────────────
-  const $tokenBtn = document.getElementById('aad-token-btn');
-
-  // Disable/enable interactive controls based on running state
-  function setControlsEnabled(enabled) {
-    // Checkboxes + interval input: disable and grey out their parent label/wrap
-    const checkboxes = [$chkApprove, $chkSkip, $chkSaveLog];
+  function renderRunInfo(el, run, owner, repo) {
+    const badgeClass = run.status === "completed" ? run.conclusion === "success" ? "aad-badge-completed" : "aad-badge-failure" : run.status === "in_progress" ? "aad-badge-in_progress" : "aad-badge-queued";
+    el.$info.innerHTML = `
+    <strong>${esc(owner)}/${esc(repo)}</strong><br>
+    <span class="aad-run-name">${esc(run.name)}</span> · ${esc(run.head_branch)}<br>
+    Status: <span class="aad-status-badge ${badgeClass}">${esc(run.status)}${run.conclusion ? " · " + esc(run.conclusion) : ""}</span>
+  `;
+  }
+  function renderToggle(el, running) {
+    if (running) {
+      el.$toggleBtn.textContent = "⏹ Stop";
+      el.$toggleBtn.className = "stop";
+      setControlsEnabled(el, false);
+    } else {
+      el.$toggleBtn.textContent = "▶ Start";
+      el.$toggleBtn.className = "start";
+      setControlsEnabled(el, true);
+    }
+  }
+  function renderCounters(el, state) {
+    el.$sessionCnt.textContent = String(state.sessionApproved);
+    el.$totalCnt.textContent = String(state.totalApproved);
+  }
+  function setStatus(el, html) {
+    el.$statusText.innerHTML = html;
+  }
+  function addLog(el, msg, level = "info") {
+    const tag = "[AAD]";
+    const consoleFn = level === "err" ? console.error : level === "warn" ? console.warn : level === "ok" ? console.info : console.log;
+    consoleFn(`${tag} ${msg}`);
+    const timeStr = ts();
+    appendLogToStore(`[${timeStr}] [${level}] ${msg}`);
+    const entry = document.createElement("div");
+    entry.className = "aad-log-entry";
+    entry.innerHTML = `<span class="aad-log-time">${timeStr}</span> <span class="aad-log-${level}">${esc(msg)}</span>`;
+    el.$log.appendChild(entry);
+    el.$log.scrollTop = el.$log.scrollHeight;
+    while (el.$log.children.length > 200) {
+      el.$log.removeChild(el.$log.firstChild);
+    }
+  }
+  function restoreLogsToPanel(el) {
+    const lines = getStoredLogs();
+    if (lines.length === 0) return;
+    const recent = lines.slice(-50);
+    const sep = document.createElement("div");
+    sep.className = "aad-log-entry";
+    sep.innerHTML = `<span class="aad-log-time">───</span> <span class="aad-log-info">── 以下为刷新前日志 (最近 ${recent.length}/${lines.length} 条) ──</span>`;
+    el.$log.appendChild(sep);
+    recent.forEach((line) => {
+      const m = line.match(/^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.*)$/);
+      const entry = document.createElement("div");
+      entry.className = "aad-log-entry";
+      if (m) {
+        entry.innerHTML = `<span class="aad-log-time">${esc(m[1])}</span> <span class="aad-log-${m[2]}">${esc(m[3])}</span>`;
+      } else {
+        entry.innerHTML = `<span class="aad-log-info">${esc(line)}</span>`;
+      }
+      el.$log.appendChild(entry);
+    });
+    const sep2 = document.createElement("div");
+    sep2.className = "aad-log-entry";
+    sep2.innerHTML = `<span class="aad-log-time">───</span> <span class="aad-log-info">── 当前会话开始 ──</span>`;
+    el.$log.appendChild(sep2);
+    el.$log.scrollTop = el.$log.scrollHeight;
+  }
+  function generateSummary(el, state, config, conclusion) {
+    const duration = Date.now() - state.monitorStartedAt;
+    const timelineHtml = state.sessionEvents.map((ev) => {
+      const t = new Date(ev.ts).toLocaleTimeString("en-US", { hour12: false });
+      const icon = ev.type === "approve" ? "✅" : ev.type === "skip" ? "⏭" : ev.type === "error" ? "❌" : ev.type === "start" ? "🚀" : ev.type === "resume" ? "🔄" : ev.type === "complete" ? "🏁" : "📌";
+      return `<div class="aad-timeline-item"><span class="aad-log-time">${t}</span> ${icon} ${esc(ev.detail)}</div>`;
+    }).join("");
+    const ok = conclusion === "success";
+    const statusIcon = ok ? "✅" : "❌";
+    const statusClass = ok ? "aad-log-ok" : "aad-log-err";
+    el.$summary.innerHTML = `
+    <div class="aad-summary-header">📊 执行报告</div>
+    <div class="aad-summary-grid">
+      <div class="aad-summary-item">
+        <span class="aad-summary-label">结果</span>
+        <span class="${statusClass}">${statusIcon} ${esc(conclusion)}</span>
+      </div>
+      <div class="aad-summary-item">
+        <span class="aad-summary-label">总耗时</span>
+        <span>${formatDuration(duration)}</span>
+      </div>
+      <div class="aad-summary-item">
+        <span class="aad-summary-label">轮询次数</span>
+        <span>${state.pollCycle}</span>
+      </div>
+      <div class="aad-summary-item">
+        <span class="aad-summary-label">审批通过</span>
+        <span class="aad-log-ok">${state.sessionApproved}</span>
+      </div>
+      <div class="aad-summary-item">
+        <span class="aad-summary-label">跳过计时器</span>
+        <span>${state.sessionSkipped}</span>
+      </div>
+      <div class="aad-summary-item">
+        <span class="aad-summary-label">轮询间隔</span>
+        <span>${config.interval}s</span>
+      </div>
+    </div>
+    ${state.sessionEvents.length > 0 ? `
+      <div class="aad-summary-header" style="margin-top:8px">📋 执行时间线</div>
+      <div class="aad-timeline">${timelineHtml}</div>
+    ` : ""}
+  `;
+    el.$summary.style.display = "block";
+  }
+  function setControlsEnabled(el, enabled) {
+    const checkboxes = [el.$chkApprove, el.$chkSkip, el.$chkSaveLog];
     checkboxes.forEach((cb) => {
       cb.disabled = !enabled;
-      const label = cb.closest('label');
-      if (label) label.classList.toggle('aad-disabled', !enabled);
+      const label = cb.closest("label");
+      if (label) label.classList.toggle("aad-disabled", !enabled);
     });
-    $intervalIn.disabled = !enabled;
-    const wrap = $intervalIn.closest('#aad-interval-wrap');
-    if (wrap) wrap.classList.toggle('aad-disabled', !enabled);
-    // Buttons
-    [$tokenBtn, $dlLogBtn].forEach((btn) => {
+    el.$intervalIn.disabled = !enabled;
+    const wrap = el.$intervalIn.closest("#aad-interval-wrap");
+    if (wrap) wrap.classList.toggle("aad-disabled", !enabled);
+    [el.$tokenBtn, el.$dlLogBtn].forEach((btn) => {
       btn.disabled = !enabled;
-      btn.classList.toggle('aad-disabled', !enabled);
+      btn.classList.toggle("aad-disabled", !enabled);
     });
   }
-
-  $toggleBtn.addEventListener('click', () => {
-    running ? stop() : start();
-  });
-
-  $intervalIn.addEventListener('change', () => {
-    interval = Math.max(5, parseInt($intervalIn.value, 10) || 30);
-    $intervalIn.value = interval;
-    GM_setValue('interval', interval);
-  });
-
-  $chkApprove.addEventListener('change', () => {
-    cfgApprove = $chkApprove.checked;
-    GM_setValue('auto_approve', cfgApprove);
-  });
-
-  $chkSkip.addEventListener('change', () => {
-    cfgSkip = $chkSkip.checked;
-    GM_setValue('auto_skip', cfgSkip);
-  });
-
-  $chkSaveLog.addEventListener('change', () => {
-    cfgSaveLog = $chkSaveLog.checked;
-    GM_setValue('save_log', cfgSaveLog);
-    $logPath.style.display = cfgSaveLog ? 'block' : 'none';
-    if (cfgSaveLog) {
-      addLog(`💾 日志记录已开启 — 文件: aad-run-${RUN_ID}.log`, 'ok');
-    } else {
-      addLog('💾 日志记录已关闭', 'info');
-    }
-  });
-
-  $dlLogBtn.addEventListener('click', downloadLog);
-  $tokenBtn.addEventListener('click', promptToken);
-
-  // ── Tampermonkey menu commands ────────────────────────────────────────────
-  GM_registerMenuCommand('🔑 Set GitHub Token', promptToken);
-  GM_registerMenuCommand('🚀 Start Monitoring', start);
-  GM_registerMenuCommand('⏹ Stop Monitoring', stop);
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // UI Update Functions
-  // ═══════════════════════════════════════════════════════════════════════════
-  function renderRunInfo(run) {
-    const badgeClass =
-      run.status === 'completed'
-        ? run.conclusion === 'success'
-          ? 'aad-badge-completed'
-          : 'aad-badge-failure'
-        : run.status === 'in_progress'
-          ? 'aad-badge-in_progress'
-          : 'aad-badge-queued';
-
-    $info.innerHTML = `
-      <strong>${esc(OWNER)}/${esc(REPO)}</strong><br>
-      <span class="aad-run-name">${esc(run.name)}</span> · ${esc(run.head_branch)}<br>
-      Status: <span class="aad-status-badge ${badgeClass}">${esc(run.status)}${run.conclusion ? ' · ' + esc(run.conclusion) : ''}</span>
-    `;
-  }
-
-  function renderToggle() {
-    if (running) {
-      $toggleBtn.textContent = '⏹ Stop';
-      $toggleBtn.className = 'stop';
-      setControlsEnabled(false);
-    } else {
-      $toggleBtn.textContent = '▶ Start';
-      $toggleBtn.className = 'start';
-      setControlsEnabled(true);
-    }
-  }
-
-  function renderCounters() {
-    $sessionCnt.textContent = sessionApproved;
-    $totalCnt.textContent = totalApproved;
-  }
-
-  function setStatus(html) {
-    $statusText.innerHTML = html;
-  }
-
-  function addLog(msg, level = 'info') {
-    // Console output for DevTools debugging
-    const tag = '[AAD]';
-    const consoleFn =
-      level === 'err' ? console.error :
-      level === 'warn' ? console.warn :
-      level === 'ok' ? console.info : console.log;
-    consoleFn(`${tag} ${msg}`);
-
-    const timeStr = ts();
-    // Persist to GM storage if log saving is enabled
-    appendLogToStore(`[${timeStr}] [${level}] ${msg}`);
-
-    const entry = document.createElement('div');
-    entry.className = 'aad-log-entry';
-    entry.innerHTML = `<span class="aad-log-time">${timeStr}</span> <span class="aad-log-${level}">${esc(msg)}</span>`;
-    $log.appendChild(entry);
-    $log.scrollTop = $log.scrollHeight;
-
-    // Keep log manageable
-    while ($log.children.length > 200) {
-      $log.removeChild($log.firstChild);
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Initialization — fetch run info on load
-  // ═══════════════════════════════════════════════════════════════════════════
-  (async function init() {
-    if (!token) {
-      $info.innerHTML = `<span style="color:#d29922">⚠️ No token configured — click <b>🔑 Token</b> to set one.</span>`;
-      addLog('No token configured. Click 🔑 Token to set your GitHub token.', 'warn');
-      return;
-    }
-    try {
-      const run = await fetchRunInfo();
-      renderRunInfo(run);
-      totalApproved = 0; // will be counted from jobs below
+  const params = parseUrl();
+  if (params) {
+    let recordEvent = function(type, detail) {
+      state.sessionEvents.push({ ts: Date.now(), type, detail });
+      saveSession(runId, state);
+    }, softRefresh = function() {
+      log("Refreshing page...");
+      location.reload();
+    }, start = function() {
+      if (!config.token) {
+        promptToken();
+        return;
+      }
+      state.running = true;
+      state.sessionApproved = 0;
+      state.sessionSkipped = 0;
+      state.sessionEvents = [];
+      state.lastSkipKey = "";
+      state.pollCycle = 0;
+      state.monitorStartedAt = Date.now();
+      clearSession(runId);
+      saveRunningState(runId, true);
+      el.$summary.style.display = "none";
+      recordEvent("start", `Started (interval=${config.interval}s, approve=${config.autoApprove}, skip=${config.autoSkip})`);
+      log(`🚀 Started monitoring (interval=${config.interval}s, approve=${config.autoApprove}, skip=${config.autoSkip}, log=${config.saveLog})`);
+      renderToggle(el, true);
+      poll();
+    }, resume = function() {
+      if (!config.token) {
+        promptToken();
+        return;
+      }
+      state.running = true;
+      loadSession(runId, state);
+      saveRunningState(runId, true);
+      el.$summary.style.display = "none";
+      recordEvent("resume", `Resumed after page refresh`);
+      log(`🚀 Started monitoring (interval=${config.interval}s, approve=${config.autoApprove}, skip=${config.autoSkip}, log=${config.saveLog})`);
+      renderToggle(el, true);
+      renderCounters(el, state);
+      poll();
+    }, stop = function() {
+      state.running = false;
+      saveRunningState(runId, false);
+      if (state.pollTimer) {
+        clearTimeout(state.pollTimer);
+        state.pollTimer = null;
+      }
+      log(`⏹ Stopped (cycles=${state.pollCycle}, session=${state.sessionApproved})`);
+      saveSession(runId, state);
+      renderToggle(el, false);
+    }, promptToken = function() {
+      const t = prompt("Enter your GitHub token (run `gh auth token` in terminal):", config.token);
+      if (t && t.trim()) {
+        config.token = t.trim();
+        saveConfigField("token", config.token);
+        log("🔑 Token saved");
+        start();
+      }
+    };
+    const { owner, repo, runId } = params;
+    const config = loadConfig();
+    const state = createState();
+    initLogStore(runId, config.saveLog);
+    injectStyles();
+    const el = buildUI(runId, config);
+    const log = (msg, level) => addLog(el, msg, level);
+    async function poll() {
+      if (!state.running) return;
+      state.pollCycle++;
+      saveRunningState(runId, true);
+      log(`[poll #${state.pollCycle}] polling...`);
       try {
-        const jobsData = await api(
-          'GET',
-          `/repos/${OWNER}/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100`
-        );
-        const gateJobs = jobsData.jobs.filter((j) =>
-          /gate/i.test(j.name)
-        );
-        totalApproved = gateJobs.filter(
-          (j) => j.conclusion === 'success'
-        ).length;
-        renderCounters();
-      } catch {
-        /* non-critical */
+        const run = await fetchRunInfo(owner, repo, runId, config.token);
+        renderRunInfo(el, run, owner, repo);
+        if (run.status === "completed") {
+          const elapsed = (Date.now() - state.monitorStartedAt) / 1e3;
+          if (state.sessionApproved === 0 && elapsed < GRACE_PERIOD) {
+            const remaining = Math.ceil(GRACE_PERIOD - elapsed);
+            log(`⏳ Run shows completed but grace period active (${remaining}s left) — re-run may not have propagated yet`, "warn");
+            setStatus(el, `⏳ Waiting for re-run to start... (${remaining}s)`);
+            if (state.running) {
+              state.pollTimer = setTimeout(poll, config.interval * 1e3);
+            }
+            return;
+          } else {
+            const ok = run.conclusion === "success";
+            recordEvent("complete", `Run ${ok ? "succeeded" : "failed"}: ${run.conclusion}`);
+            log(
+              ok ? `✅ Run completed! (session: ${state.sessionApproved}, total: ${state.totalApproved})` : `❌ Run finished: ${run.conclusion} (session: ${state.sessionApproved}, total: ${state.totalApproved})`,
+              ok ? "ok" : "err"
+            );
+            generateSummary(el, state, config, run.conclusion || "unknown");
+            stop();
+            return;
+          }
+        }
+        const pending = await fetchPending(owner, repo, runId, config.token);
+        const approvable = pending.filter((d) => d.current_user_can_approve);
+        log(`[poll] status=${run.status}, pending=${pending.length}, approvable=${approvable.length}`);
+        if (config.autoApprove && approvable.length > 0) {
+          const envIds = approvable.map((d) => d.environment.id);
+          const envNames = approvable.map((d) => d.environment.name).join(", ");
+          log(`Found ${approvable.length} approvable gate(s): ${envNames}`);
+          try {
+            await approveDeployments(owner, repo, runId, config.token, envIds);
+            log(`✅ Approved: ${envNames}`, "ok");
+            state.sessionApproved += approvable.length;
+            state.totalApproved += approvable.length;
+            recordEvent("approve", `Approved: ${envNames}`);
+            renderCounters(el, state);
+            if (state.running) {
+              state.pollTimer = setTimeout(poll, 5e3);
+            }
+            return;
+          } catch (e) {
+            log(`⚠️ Approve failed: ${e.message}`, "warn");
+          }
+        } else if (pending.length > 0) {
+          const waitGates = pending.filter(
+            (d) => !d.current_user_can_approve && d.wait_timer && d.wait_timer > 0
+          );
+          if (config.autoSkip && waitGates.length > 0) {
+            const skipKey = waitGates.map((d) => d.environment.name).sort().join(",");
+            if (skipKey !== state.lastSkipKey) {
+              state.lastSkipKey = skipKey;
+              log(`Detected wait timer(s): ${skipKey}`);
+              log("Attempting to skip via page DOM...");
+              const skipped = await trySkipWaitTimers(owner, repo, log);
+              if (skipped) {
+                log("✅ Skip attempted — checking result...", "ok");
+                state.sessionSkipped++;
+                recordEvent("skip", `Skipped wait timers: ${skipKey}`);
+                saveSession(runId, state);
+                softRefresh();
+              } else {
+                log("⚠️ Skip controls not found in DOM. Waiting for timer(s) to expire.", "warn");
+              }
+            }
+          }
+          const timerText = pending.filter((d) => !d.current_user_can_approve).map((d) => {
+            if (d.wait_timer > 0 && d.wait_timer_started_at) {
+              const totalSecs = d.wait_timer * 60;
+              const started = new Date(d.wait_timer_started_at).getTime() / 1e3;
+              const remaining = Math.ceil(started + totalSecs - Date.now() / 1e3);
+              if (remaining > 0) {
+                const m = Math.floor(remaining / 60);
+                const s = remaining % 60;
+                return `${esc(d.environment.name)} ⏱ ${m}m${s}s`;
+              }
+              return `${esc(d.environment.name)} ⏱ expired`;
+            }
+            return `${esc(d.environment.name)} (waiting)`;
+          }).join(" · ");
+          setStatus(el, `⏳ ${pending.length} pending — ${timerText}`);
+        } else {
+          setStatus(el, `🔄 Monitoring... (${run.status})`);
+        }
+      } catch (e) {
+        log(`⚠️ Poll error: ${e.message}`, "warn");
       }
-      addLog(`Ready — ${OWNER}/${REPO} run #${RUN_ID}`);
-
-      // Restore previous session logs to panel if log saving is on
-      if (cfgSaveLog) {
-        restoreLogsToPanel();
+      if (state.running) {
+        state.pollTimer = setTimeout(poll, config.interval * 1e3);
       }
-
-      // Auto-resume if was running before page refresh
-      if (wasRunning()) {
-        addLog('🔄 Resuming after page refresh...', 'ok');
-        resume();
-      }
-    } catch (e) {
-      $info.innerHTML = `<span style="color:#f85149">❌ Failed to load run info: ${esc(e.message)}</span>`;
-      addLog(`Failed to load run info: ${e.message}`, 'err');
     }
-  })();
+    document.getElementById("aad-close-btn").addEventListener("click", () => {
+      stop();
+      el.panel.remove();
+      el.tab.remove();
+    });
+    el.$toggleBtn.addEventListener("click", () => {
+      state.running ? stop() : start();
+    });
+    el.$intervalIn.addEventListener("change", () => {
+      config.interval = Math.max(5, parseInt(el.$intervalIn.value, 10) || 30);
+      el.$intervalIn.value = String(config.interval);
+      saveConfigField("interval", config.interval);
+    });
+    el.$chkApprove.addEventListener("change", () => {
+      config.autoApprove = el.$chkApprove.checked;
+      saveConfigField("autoApprove", config.autoApprove);
+    });
+    el.$chkSkip.addEventListener("change", () => {
+      config.autoSkip = el.$chkSkip.checked;
+      saveConfigField("autoSkip", config.autoSkip);
+    });
+    el.$chkSaveLog.addEventListener("change", () => {
+      config.saveLog = el.$chkSaveLog.checked;
+      saveConfigField("saveLog", config.saveLog);
+      setLogSaving(config.saveLog);
+      el.$logPath.style.display = config.saveLog ? "block" : "none";
+      if (config.saveLog) {
+        log(`💾 日志记录已开启 — 文件: aad-run-${runId}.log`, "ok");
+      } else {
+        log("💾 日志记录已关闭", "info");
+      }
+    });
+    el.$dlLogBtn.addEventListener("click", () => downloadLog(runId));
+    el.$tokenBtn.addEventListener("click", promptToken);
+    GM_registerMenuCommand("🔑 Set GitHub Token", promptToken);
+    GM_registerMenuCommand("🚀 Start Monitoring", start);
+    GM_registerMenuCommand("⏹ Stop Monitoring", stop);
+    (async function init() {
+      if (!config.token) {
+        el.$info.innerHTML = `<span style="color:#d29922">⚠️ No token configured — click <b>🔑 Token</b> to set one.</span>`;
+        log("No token configured. Click 🔑 Token to set your GitHub token.", "warn");
+        return;
+      }
+      try {
+        const run = await fetchRunInfo(owner, repo, runId, config.token);
+        renderRunInfo(el, run, owner, repo);
+        state.totalApproved = 0;
+        try {
+          const jobsData = await fetchJobs(owner, repo, runId, config.token);
+          const gateJobs = jobsData.jobs.filter((j) => /gate/i.test(j.name));
+          state.totalApproved = gateJobs.filter((j) => j.conclusion === "success").length;
+          renderCounters(el, state);
+        } catch {
+        }
+        log(`Ready — ${owner}/${repo} run #${runId}`);
+        if (config.saveLog) {
+          restoreLogsToPanel(el);
+        }
+        if (wasRunning(runId)) {
+          log("🔄 Resuming after page refresh...", "ok");
+          resume();
+        }
+      } catch (e) {
+        el.$info.innerHTML = `<span style="color:#f85149">❌ Failed to load run info: ${esc(e.message)}</span>`;
+        log(`Failed to load run info: ${e.message}`, "err");
+      }
+    })();
+  }
+
 })();
