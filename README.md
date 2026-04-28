@@ -56,6 +56,117 @@ Built with **Vite + TypeScript**, outputs `auto-approve-deploy.user.js` (dev) an
 - **▶** button in the header to collapse
 - **×** to close the panel entirely
 
+## Execution Flow
+
+```
+                         ┌────────────┐
+                         │ Page Load  │
+                         └─────┬──────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │ URL matches          │
+                    │ actions/runs/*?      │
+                    └──┬───────────────┬──┘
+                   No  │               │ Yes
+                  ┌────▼──┐  ┌─────────▼──────────────┐
+                  │ Exit  │  │ Parse URL · Load Config │
+                  └───────┘  │ · Inject UI             │
+                             └─────────┬───────────────┘
+                                       │
+                            ┌──────────▼──────────┐
+                            │   Token configured?  │
+                            └──┬───────────────┬──┘
+                           No  │               │ Yes
+                     ┌─────────▼──────┐  ┌─────▼──────────┐
+                     │ Prompt for     │  │ Fetch run info  │
+                     │ GitHub token   │  └─────┬──────────┘
+                     └────────────────┘        │
+                                    ┌──────────▼──────────┐
+                                    │ Was running before   │
+                                    │ page refresh?        │
+                                    └──┬───────────────┬──┘
+                                   Yes │               │ No
+                            ┌──────────▼──┐   ┌────────▼───────────┐
+                            │ Resume:     │   │ Wait for user to   │
+                            │ restore     │   │ click ▶ Start      │
+                            │ session     │   └────────┬───────────┘
+                            └──────┬──────┘            │
+                                   └────────┬──────────┘
+                                            │
+                    ┌───────────────────────►│
+                    │               ┌───────▼────────┐
+                    │               │   POLL LOOP     │
+                    │               └───────┬────────┘
+                    │                       │
+                    │            ┌──────────▼──────────┐
+                    │            │ Fetch run status     │
+                    │            │ via GitHub API       │
+                    │            └──────────┬──────────┘
+                    │                       │
+                    │            ┌──────────▼──────────┐
+                    │            │  Run completed?      │
+                    │            └──┬───────────────┬──┘
+                    │           Yes │               │ No
+                    │    ┌─────────▼──────────┐    │
+                    │    │ Grace period active │    │
+                    │    │ & no approvals yet? │    │
+                    │    └──┬──────────────┬──┘    │
+                    │   Yes │              │ No     │
+                    │ ┌─────▼─────────┐ ┌──▼─────────────────┐
+                    │ │ Wait for      │ │ Generate summary   │
+                    │ │ re-run to     │ │ report · Stop      │
+                    ├─┤ propagate     │ └────────────────────┘
+                    │ └───────────────┘
+                    │                          │
+                    │               ┌──────────▼──────────┐
+                    │               │ Fetch pending        │
+                    │               │ deployments          │
+                    │               └──────────┬──────────┘
+                    │                          │
+                    │               ┌──────────▼──────────┐
+                    │               │ Approvable gates     │
+                    │               │ found?               │
+                    │               └──┬───────────────┬──┘
+                    │              Yes │               │ No
+                    │       ┌─────────▼──────────┐    │
+                    │       │ Approve via        │    │
+                    │       │ GitHub API         │    │
+                    │       └─────────┬──────────┘    │
+                    │                 │               │
+                    │       ┌─────────▼──────────┐    │
+                    ├───────┤ Quick re-poll (5s)  │    │
+                    │       └────────────────────┘    │
+                    │                          ┌──────▼──────────┐
+                    │                          │ Wait timer gates │
+                    │                          │ found?           │
+                    │                          └──┬───────────┬──┘
+                    │                         Yes │           │ No
+                    │              ┌──────────────▼────┐      │
+                    │              │ Already attempted  │      │
+                    │              │ this environment?  │      │
+                    │              └──┬─────────────┬──┘      │
+                    │            Yes │             │ No       │
+                    │                │    ┌────────▼───────┐  │
+                    │                │    │ Try skip via   │  │
+                    │                │    │ DOM interaction │  │
+                    │                │    └────────┬───────┘  │
+                    │                │    ┌────────▼───────┐  │
+                    │                │    │ Skip success?  │  │
+                    │                │    └──┬──────────┬──┘  │
+                    │                │   Yes │          │ No  │
+                    │         ┌──────▼──┐    │          │     │
+                    │         │ Wait for│    │          │     │
+                    │         │ timer   │ ┌──▼────────────┐  │
+                    │         │ expire  │ │ Page refresh · │  │
+                    │         └────┬────┘ │ Resume session │  │
+                    │              │      └───────┬────────┘  │
+                    │              │              │            │
+                    │       ┌──────▼──────────────▼──┐        │
+                    │       │ Schedule next poll     │◄───────┘
+                    └───────┤ (interval seconds)     │
+                            └────────────────────────┘
+```
+
 ## Token Permissions
 
 The GitHub token needs the following scope:
