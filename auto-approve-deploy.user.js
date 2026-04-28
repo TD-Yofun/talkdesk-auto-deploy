@@ -45,21 +45,54 @@
   let totalApproved   = 0;
   let lastSkipKey     = '';
   let monitorStartedAt = 0;   // timestamp when monitoring began
+  let pollCycle        = 0;   // incremental poll counter for log tracing
   const GRACE_PERIOD   = 90;  // seconds to wait for re-run to propagate
 
   // Log persistence per run
   const logStoreKey = `aad_log_${RUN_ID}`;
+  let _logBuffer = [];  // batch buffer to reduce GM_setValue calls
+  let _logFlushTimer = null;
+  function _flushLogBuffer() {
+    if (_logBuffer.length === 0) return;
+    const arr = GM_getValue(logStoreKey, []);
+    // Migration: handle old string format
+    const existing = typeof arr === 'string'
+      ? (arr ? arr.split('\n').filter(Boolean) : [])
+      : arr;
+    existing.push(..._logBuffer);
+    // Cap at 2000 entries
+    if (existing.length > 2000) existing.splice(0, existing.length - 2000);
+    GM_setValue(logStoreKey, existing);
+    _logBuffer = [];
+  }
   function appendLogToStore(line) {
     if (!cfgSaveLog) return;
-    const existing = GM_getValue(logStoreKey, '');
-    GM_setValue(logStoreKey, existing + line + '\n');
+    _logBuffer.push(line);
+    // Debounce: flush after 500ms of no new writes, or immediately if buffer is large
+    if (_logBuffer.length >= 20) {
+      _flushLogBuffer();
+    } else {
+      clearTimeout(_logFlushTimer);
+      _logFlushTimer = setTimeout(_flushLogBuffer, 500);
+    }
+  }
+  function getStoredLogs() {
+    // Flush any pending buffer first
+    _flushLogBuffer();
+    const data = GM_getValue(logStoreKey, []);
+    // Migration: handle old string format
+    if (typeof data === 'string') {
+      return data ? data.split('\n').filter(Boolean) : [];
+    }
+    return data;
   }
   function downloadLog() {
-    const content = GM_getValue(logStoreKey, '');
-    if (!content) {
+    const lines = getStoredLogs();
+    if (lines.length === 0) {
       alert('当前 Run 暂无日志记录');
       return;
     }
+    const content = lines.join('\n') + '\n';
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -67,6 +100,36 @@
     a.download = `aad-run-${RUN_ID}.log`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+  function restoreLogsToPanel() {
+    const lines = getStoredLogs();
+    if (lines.length === 0) return;
+    // Show a separator and last N lines
+    const maxRestore = 50;
+    const recent = lines.slice(-maxRestore);
+    const $log = document.getElementById('aad-log');
+    if (!$log) return;
+    const sep = document.createElement('div');
+    sep.className = 'aad-log-entry';
+    sep.innerHTML = `<span class="aad-log-time">───</span> <span class="aad-log-info">── 以下为刷新前日志 (最近 ${recent.length}/${lines.length} 条) ──</span>`;
+    $log.appendChild(sep);
+    recent.forEach((line) => {
+      // Parse stored format: [HH:MM:SS] [level] msg
+      const m = line.match(/^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.*)$/);
+      const entry = document.createElement('div');
+      entry.className = 'aad-log-entry';
+      if (m) {
+        entry.innerHTML = `<span class="aad-log-time">${esc(m[1])}</span> <span class="aad-log-${m[2]}">${esc(m[3])}</span>`;
+      } else {
+        entry.innerHTML = `<span class="aad-log-info">${esc(line)}</span>`;
+      }
+      $log.appendChild(entry);
+    });
+    const sep2 = document.createElement('div');
+    sep2.className = 'aad-log-entry';
+    sep2.innerHTML = `<span class="aad-log-time">───</span> <span class="aad-log-info">── 当前会话开始 ──</span>`;
+    $log.appendChild(sep2);
+    $log.scrollTop = $log.scrollHeight;
   }
 
   // Persist running state per run so script auto-resumes after page refresh
@@ -79,9 +142,9 @@
     }
   }
   function wasRunning() {
-    const ts = GM_getValue(stateKey, 0);
+    const savedTs = GM_getValue(stateKey, 0);
     // Consider stale if saved more than 30 minutes ago (page was probably closed)
-    return ts > 0 && (Date.now() - ts) < 30 * 60 * 1000;
+    return savedTs > 0 && (Date.now() - savedTs) < 30 * 60 * 1000;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -150,7 +213,7 @@
       {
         environment_ids: envIds,
         state: 'approved',
-        comment: 'Auto-approved by Auto-Approve Deploy Gates (Tampermonkey)',
+        comment: 'Auto-approved by Auto-Approve Deploy Gates',
       }
     );
   }
@@ -336,8 +399,10 @@
   // ═══════════════════════════════════════════════════════════════════════════
   async function poll() {
     if (!running) return;
+    pollCycle++;
     // Keep running-state timestamp fresh so it survives page reloads
     saveRunningState(true);
+    addLog(`[poll #${pollCycle}] polling...`);
     try {
       // 1. Check run status
       const run = await fetchRunInfo();
@@ -351,6 +416,11 @@
           const remaining = Math.ceil(GRACE_PERIOD - elapsed);
           addLog(`⏳ Run shows completed but grace period active (${remaining}s left) — re-run may not have propagated yet`, 'warn');
           setStatus(`⏳ Waiting for re-run to start... (${remaining}s)`);
+          // Skip pending fetch during grace period — run is "completed" so nothing to do
+          if (running) {
+            pollTimer = setTimeout(poll, interval * 1000);
+          }
+          return;
         } else {
           const ok = run.conclusion === 'success';
           addLog(
@@ -369,6 +439,8 @@
       const approvable = pending.filter(
         (d) => d.current_user_can_approve
       );
+
+      addLog(`[poll] status=${run.status}, pending=${pending.length}, approvable=${approvable.length}`);
 
       // 3. Auto-approve
       if (cfgApprove && approvable.length > 0) {
@@ -481,9 +553,10 @@
     running = true;
     sessionApproved = 0;
     lastSkipKey = '';
+    pollCycle = 0;
     monitorStartedAt = Date.now();
     saveRunningState(true);
-    addLog('🚀 Started monitoring');
+    addLog(`🚀 Started monitoring (interval=${interval}s, approve=${cfgApprove}, skip=${cfgSkip}, log=${cfgSaveLog})`);
     renderToggle();
     poll();
   }
@@ -495,7 +568,7 @@
       clearTimeout(pollTimer);
       pollTimer = null;
     }
-    addLog('⏹ Stopped');
+    addLog(`⏹ Stopped (cycles=${pollCycle}, session=${sessionApproved})`);
     renderToggle();
   }
 
@@ -819,19 +892,20 @@
 
   // Disable/enable interactive controls based on running state
   function setControlsEnabled(enabled) {
-    const els = [$intervalIn, $chkApprove, $chkSkip, $chkSaveLog, $tokenBtn, $dlLogBtn];
-    els.forEach((el) => {
-      if (enabled) {
-        el.disabled = false;
-        el.closest('label, div, button')?.classList.remove('aad-disabled');
-        el.classList.remove('aad-disabled');
-      } else {
-        el.disabled = true;
-        // For checkboxes inside labels, disable the label visually
-        const wrapper = el.closest('label') || el.closest('div#aad-interval-wrap');
-        if (wrapper) wrapper.classList.add('aad-disabled');
-        if (el.tagName === 'BUTTON') el.classList.add('aad-disabled');
-      }
+    // Checkboxes + interval input: disable and grey out their parent label/wrap
+    const checkboxes = [$chkApprove, $chkSkip, $chkSaveLog];
+    checkboxes.forEach((cb) => {
+      cb.disabled = !enabled;
+      const label = cb.closest('label');
+      if (label) label.classList.toggle('aad-disabled', !enabled);
+    });
+    $intervalIn.disabled = !enabled;
+    const wrap = $intervalIn.closest('#aad-interval-wrap');
+    if (wrap) wrap.classList.toggle('aad-disabled', !enabled);
+    // Buttons
+    [$tokenBtn, $dlLogBtn].forEach((btn) => {
+      btn.disabled = !enabled;
+      btn.classList.toggle('aad-disabled', !enabled);
     });
   }
 
@@ -969,6 +1043,11 @@
         /* non-critical */
       }
       addLog(`Ready — ${OWNER}/${REPO} run #${RUN_ID}`);
+
+      // Restore previous session logs to panel if log saving is on
+      if (cfgSaveLog) {
+        restoreLogsToPanel();
+      }
 
       // Auto-resume if was running before page refresh
       if (wasRunning()) {
