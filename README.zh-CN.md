@@ -4,6 +4,8 @@
 
 一个 Tampermonkey 用户脚本，自动审批 GitHub Actions 部署门禁并跳过等待计时器——告别多环境部署流水线中的手动点击。
 
+使用 **Vite + TypeScript** 构建，输出 `auto-approve-deploy.user.js`（开发版）和 `auto-approve-deploy.min.user.js`（压缩版）。
+
 ## 功能特性
 
 - **自动审批部署门禁** — 通过 GitHub REST API 检测待审批的部署并自动批准
@@ -18,7 +20,8 @@
 1. 安装 [Tampermonkey](https://www.tampermonkey.net/) 浏览器扩展
 2. 点击下方链接安装用户脚本：
 
-   **[安装 auto-approve-deploy.user.js](https://github.com/TD-Yofun/talkdesk-auto-deploy/raw/main/auto-approve-deploy.user.js)**
+   - 完整版：**[auto-approve-deploy.user.js](https://github.com/TD-Yofun/talkdesk-auto-deploy/raw/main/auto-approve-deploy.user.js)**
+   - 压缩版：**[auto-approve-deploy.min.user.js](https://github.com/TD-Yofun/talkdesk-auto-deploy/raw/main/auto-approve-deploy.min.user.js)**
 
 3. 首次使用时，点击 **🔑 Token** 设置 GitHub 个人访问令牌（终端运行 `gh auth token` 获取）
 
@@ -67,6 +70,70 @@ GitHub Token 需要以下权限：
 3. **手动 POST 请求**，使用从页面提取的 CSRF Token
 
 此功能使用浏览器会话 Cookie（而非 API Token），因此只能在浏览器内运行。
+
+## 开发
+
+### 前置条件
+
+- [Node.js](https://nodejs.org/) >= 18
+- npm
+
+### 安装依赖
+
+```bash
+npm install
+```
+
+### 构建
+
+```bash
+# 同时构建开发版和压缩版
+npm run build
+
+# 仅构建开发版
+npm run build:dev
+
+# 仅构建压缩版
+npm run build:prod
+```
+
+### Watch 模式
+
+```bash
+# 文件修改后自动重新构建开发版
+npm run dev
+
+# 文件修改后自动同时构建两个版本
+npm run dev:all
+```
+
+### 项目结构
+
+```
+src/
+  main.ts              ← 入口文件
+  core/                ← 核心状态与持久化
+    config.ts          ← 持久化配置（GM_getValue/GM_setValue）
+    state.ts           ← 运行时状态类型与工厂函数
+    log-store.ts       ← 日志持久化（批量缓冲、防抖刷新）
+    session.ts         ← 会话持久化（跨页面刷新）
+  api/                 ← 网络请求与 DOM 交互
+    api.ts             ← GitHub REST API 层（GM_xmlhttpRequest）
+    skip-timers.ts     ← 基于 DOM 的跳过等待计时器（3 种方式）
+  ui/                  ← 界面渲染
+    styles.ts          ← CSS 注入（GM_addStyle）
+    ui.ts              ← 面板构建、渲染、事件绑定
+  utils/               ← 工具函数
+    helpers.ts         ← ts()、esc()、formatDuration()
+    url.ts             ← URL 解析（owner/repo/runId）
+```
+
+### 构建产物
+
+| 文件 | 说明 |
+|------|------|
+| `auto-approve-deploy.user.js` | 开发版 — 未压缩，可读 |
+| `auto-approve-deploy.min.user.js` | 生产版 — JS 压缩 + CSS/HTML 模板压缩 |
 
 ## 许可证
 
