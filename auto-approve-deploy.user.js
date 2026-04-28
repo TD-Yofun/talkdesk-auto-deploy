@@ -149,6 +149,33 @@
     return savedTs > 0 && (Date.now() - savedTs) < 30 * 60 * 1000;
   }
 
+  // Persist session counters across page refreshes
+  const sessionKey = `aad_session_${RUN_ID}`;
+  function saveSession() {
+    GM_setValue(sessionKey, {
+      approved: sessionApproved,
+      skipped: sessionSkipped,
+      events: sessionEvents,
+      startedAt: monitorStartedAt,
+      pollCycle,
+      lastSkipKey,
+    });
+  }
+  function loadSession() {
+    const s = GM_getValue(sessionKey, null);
+    if (!s) return false;
+    sessionApproved  = s.approved  || 0;
+    sessionSkipped   = s.skipped   || 0;
+    sessionEvents    = s.events    || [];
+    monitorStartedAt = s.startedAt || Date.now();
+    pollCycle        = s.pollCycle || 0;
+    lastSkipKey      = s.lastSkipKey || '';
+    return true;
+  }
+  function clearSession() {
+    GM_setValue(sessionKey, null);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // Helpers
   // ═══════════════════════════════════════════════════════════════════════════
@@ -163,6 +190,7 @@
 
   function recordEvent(type, detail) {
     sessionEvents.push({ ts: Date.now(), type, detail });
+    saveSession();
   }
 
   function formatDuration(ms) {
@@ -187,6 +215,7 @@
                    ev.type === 'skip' ? '⏭' :
                    ev.type === 'error' ? '❌' :
                    ev.type === 'start' ? '🚀' :
+                   ev.type === 'resume' ? '🔄' :
                    ev.type === 'complete' ? '🏁' : '📌';
       return `<div class="aad-timeline-item"><span class="aad-log-time">${t}</span> ${icon} ${esc(ev.detail)}</div>`;
     }).join('');
@@ -531,9 +560,9 @@
               .map((r) => r.environment.name)
               .join(', ');
             addLog(`✅ Approved: ${names}`, 'ok');
-            recordEvent('approve', `Approved: ${names}`);
             sessionApproved += approvable.length;
             totalApproved += approvable.length;
+            recordEvent('approve', `Approved: ${names}`);
             renderCounters();
             softRefresh();
           } else {
@@ -565,6 +594,7 @@
               addLog('✅ Skip attempted — checking result...', 'ok');
               sessionSkipped++;
               recordEvent('skip', `Skipped wait timers: ${skipKey}`);
+              saveSession();
               softRefresh();
             } else {
               addLog(
@@ -634,6 +664,7 @@
     lastSkipKey = '';
     pollCycle = 0;
     monitorStartedAt = Date.now();
+    clearSession();
     saveRunningState(true);
     // Hide previous summary
     const $summary = document.getElementById('aad-summary');
@@ -641,6 +672,24 @@
     recordEvent('start', `Started (interval=${interval}s, approve=${cfgApprove}, skip=${cfgSkip})`);
     addLog(`🚀 Started monitoring (interval=${interval}s, approve=${cfgApprove}, skip=${cfgSkip}, log=${cfgSaveLog})`);
     renderToggle();
+    poll();
+  }
+
+  function resume() {
+    if (!token) {
+      promptToken();
+      return;
+    }
+    running = true;
+    loadSession();
+    saveRunningState(true);
+    // Hide previous summary
+    const $summary = document.getElementById('aad-summary');
+    if ($summary) $summary.style.display = 'none';
+    recordEvent('resume', `Resumed after page refresh`);
+    addLog(`🚀 Started monitoring (interval=${interval}s, approve=${cfgApprove}, skip=${cfgSkip}, log=${cfgSaveLog})`);
+    renderToggle();
+    renderCounters();
     poll();
   }
 
@@ -652,6 +701,7 @@
       pollTimer = null;
     }
     addLog(`⏹ Stopped (cycles=${pollCycle}, session=${sessionApproved})`);
+    saveSession();  // persist final state for summary
     renderToggle();
   }
 
@@ -1160,7 +1210,7 @@
       // Auto-resume if was running before page refresh
       if (wasRunning()) {
         addLog('🔄 Resuming after page refresh...', 'ok');
-        start();
+        resume();
       }
     } catch (e) {
       $info.innerHTML = `<span style="color:#f85149">❌ Failed to load run info: ${esc(e.message)}</span>`;
