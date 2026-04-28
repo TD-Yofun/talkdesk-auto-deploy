@@ -11,7 +11,7 @@ A Tampermonkey userscript that automatically approves GitHub Actions deployment 
 - **Persistent state** — Survives page refreshes; auto-resumes monitoring after reload
 - **Grace period** — Tolerates "Re-run all jobs" delays (90s) before declaring a run complete
 - **Local log storage** — Optionally saves per-run logs to browser storage with download support
-- **Dark-themed floating panel** — Draggable, minimizable, non-intrusive UI with real-time status
+- **Side panel UI** — Dark-themed, collapsible side panel with real-time status and execution summary report
 
 ## Installation
 
@@ -25,13 +25,13 @@ A Tampermonkey userscript that automatically approves GitHub Actions deployment 
 ## Usage
 
 1. Navigate to any GitHub Actions run page (`github.com/{owner}/{repo}/actions/runs/{id}`)
-2. The floating panel appears at the bottom-right corner
+2. The side panel appears on the right edge of the page
 3. Click **▶ Start** to begin monitoring
 4. The script will:
-   - Poll the run status every 30s (configurable)
+   - Poll the run status every 15s (configurable)
    - Auto-approve any pending deployment gates
    - Attempt to skip wait timers via page DOM interaction
-   - Stop automatically when the run completes
+   - Stop automatically when the run completes and show a summary report
 
 ### Controls
 
@@ -49,9 +49,9 @@ A Tampermonkey userscript that automatically approves GitHub Actions deployment 
 
 ### Panel Interactions
 
-- **Drag** the header to reposition
-- **Double-click** the header to reset to bottom-right
-- **−** to minimize, **×** to close
+- Click the **◀ AAD** tab on the right edge to expand/collapse the panel
+- **▶** button in the header to collapse
+- **×** to close the panel entirely
 
 ## Token Permissions
 
