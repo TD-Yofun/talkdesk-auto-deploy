@@ -74,6 +74,14 @@ export function approveDeployments(owner: string, repo: string, runId: string, t
   });
 }
 
+export function skipWaitTimersViaApi(owner: string, repo: string, runId: string, token: string, envIds: number[]): Promise<unknown> {
+  return api('POST', `/repos/${owner}/${repo}/actions/runs/${runId}/pending_deployments`, token, {
+    environment_ids: envIds,
+    state: 'approved',
+    comment: 'Wait timer skipped by Auto-Approve Deploy Gates',
+  });
+}
+
 export function fetchJobs(owner: string, repo: string, runId: string, token: string): Promise<JobsData> {
   return api('GET', `/repos/${owner}/${repo}/actions/runs/${runId}/jobs?per_page=100`, token);
 }

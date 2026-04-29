@@ -7,6 +7,7 @@ export interface Config {
   autoApprove: boolean;
   autoSkip: boolean;
   saveLog: boolean;
+  panelVisible: boolean;
 }
 
 export function loadConfig(): Config {
@@ -16,6 +17,7 @@ export function loadConfig(): Config {
     autoApprove: GM_getValue('auto_approve', true),
     autoSkip: GM_getValue('auto_skip', true),
     saveLog: GM_getValue('save_log', false),
+    panelVisible: GM_getValue('panel_visible', true),
   };
 }
 
@@ -26,6 +28,7 @@ export function saveConfigField<K extends keyof Config>(key: K, value: Config[K]
     autoApprove: 'auto_approve',
     autoSkip: 'auto_skip',
     saveLog: 'save_log',
+    panelVisible: 'panel_visible',
   };
   GM_setValue(keyMap[key], value);
 }

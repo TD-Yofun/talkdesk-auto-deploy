@@ -31,7 +31,8 @@
       interval: GM_getValue("interval", 15),
       autoApprove: GM_getValue("auto_approve", true),
       autoSkip: GM_getValue("auto_skip", true),
-      saveLog: GM_getValue("save_log", false)
+      saveLog: GM_getValue("save_log", false),
+      panelVisible: GM_getValue("panel_visible", true)
     };
   }
   function saveConfigField(key, value) {
@@ -40,7 +41,8 @@
       interval: "interval",
       autoApprove: "auto_approve",
       autoSkip: "auto_skip",
-      saveLog: "save_log"
+      saveLog: "save_log",
+      panelVisible: "panel_visible"
     };
     GM_setValue(keyMap[key], value);
   }
@@ -188,6 +190,13 @@
       environment_ids: envIds,
       state: "approved",
       comment: "Auto-approved by Auto-Approve Deploy Gates"
+    });
+  }
+  function skipWaitTimersViaApi(owner, repo, runId, token, envIds) {
+    return api("POST", `/repos/${owner}/${repo}/actions/runs/${runId}/pending_deployments`, token, {
+      environment_ids: envIds,
+      state: "approved",
+      comment: "Wait timer skipped by Auto-Approve Deploy Gates"
     });
   }
   function fetchJobs(owner, repo, runId, token) {
@@ -670,10 +679,17 @@
       $tokenBtn: document.getElementById("aad-token-btn")
     };
     if (config.saveLog) el.$logPath.style.display = "block";
+    if (!config.panelVisible) {
+      panel.classList.add("collapsed");
+      tab.classList.remove("shifted");
+      tab.textContent = "◀ AAD";
+    }
     function togglePanel() {
       const isCollapsed = panel.classList.toggle("collapsed");
       tab.classList.toggle("shifted", !isCollapsed);
       tab.textContent = isCollapsed ? "◀ AAD" : "▶";
+      config.panelVisible = !isCollapsed;
+      saveConfigField("panelVisible", config.panelVisible);
     }
     tab.addEventListener("click", togglePanel);
     document.getElementById("aad-collapse-btn").addEventListener("click", togglePanel);
@@ -896,12 +912,29 @@
         if (skipped) {
           log("✅ Skip attempted (observer) — refreshing...", "ok");
           state.sessionSkipped++;
-          recordEvent("skip", "Skipped wait timers (observer)");
+          recordEvent("skip", "Skipped wait timers (observer/DOM)");
           saveSession(runId, state);
           softRefresh();
         } else {
+          log("⚠️ DOM skip failed (observer). Trying API-based skip...", "warn");
+          try {
+            const pending = await fetchPending(owner, repo, runId, config.token);
+            const waitGates = pending.filter(
+              (d) => !d.current_user_can_approve && d.wait_timer && d.wait_timer > 0
+            );
+            if (waitGates.length > 0) {
+              const envIds = waitGates.map((d) => d.environment.id);
+              const envNames = waitGates.map((d) => d.environment.name).join(", ");
+              await skipWaitTimersViaApi(owner, repo, runId, config.token, envIds);
+              log(`✅ Skipped via API (observer): ${envNames}`, "ok");
+              state.sessionSkipped++;
+              recordEvent("skip", `Skipped wait timers (observer/API): ${envNames}`);
+              saveSession(runId, state);
+            }
+          } catch (e) {
+            log(`⚠️ API skip also failed (observer): ${e.message}`, "warn");
+          }
           skipCooldownUntil = Date.now() + 3e4;
-          log("[skip-observer] Skip failed, cooldown 30s before next attempt", "warn");
         }
       } finally {
         skipInProgress = false;
@@ -972,11 +1005,25 @@
               if (skipped) {
                 log("✅ Skip attempted — checking result...", "ok");
                 state.sessionSkipped++;
-                recordEvent("skip", `Skipped wait timers: ${skipKey}`);
+                recordEvent("skip", `Skipped wait timers (DOM): ${skipKey}`);
                 saveSession(runId, state);
                 softRefresh();
               } else {
-                log("⚠️ Skip controls not found in DOM. Waiting for timer(s) to expire.", "warn");
+                log("⚠️ DOM skip failed. Trying API-based skip...", "warn");
+                const envIds = waitGates.map((d) => d.environment.id);
+                try {
+                  await skipWaitTimersViaApi(owner, repo, runId, config.token, envIds);
+                  log(`✅ Skipped via API: ${skipKey}`, "ok");
+                  state.sessionSkipped++;
+                  recordEvent("skip", `Skipped wait timers (API): ${skipKey}`);
+                  saveSession(runId, state);
+                  if (state.running) {
+                    state.pollTimer = setTimeout(poll, 5e3);
+                  }
+                  return;
+                } catch (e) {
+                  log(`⚠️ API skip also failed: ${e.message} — waiting for timer(s) to expire.`, "warn");
+                }
               }
             }
           }

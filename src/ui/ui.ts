@@ -3,7 +3,7 @@
  */
 import { esc, ts, formatDuration } from '../utils/helpers';
 import { appendLogToStore, getStoredLogs } from '../core/log-store';
-import type { Config } from '../core/config';
+import { Config, saveConfigField } from '../core/config';
 import type { State } from '../core/state';
 
 export interface UIElements {
@@ -88,11 +88,20 @@ export function buildUI(runId: string, config: Config): UIElements {
 
   if (config.saveLog) el.$logPath.style.display = 'block';
 
+  // Restore panel visibility from config
+  if (!config.panelVisible) {
+    panel.classList.add('collapsed');
+    tab.classList.remove('shifted');
+    tab.textContent = '◀ AAD';
+  }
+
   // Collapse / Expand
   function togglePanel(): void {
     const isCollapsed = panel.classList.toggle('collapsed');
     tab.classList.toggle('shifted', !isCollapsed);
     tab.textContent = isCollapsed ? '◀ AAD' : '▶';
+    config.panelVisible = !isCollapsed;
+    saveConfigField('panelVisible', config.panelVisible);
   }
   tab.addEventListener('click', togglePanel);
   document.getElementById('aad-collapse-btn')!.addEventListener('click', togglePanel);
