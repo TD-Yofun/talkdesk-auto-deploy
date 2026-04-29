@@ -628,7 +628,6 @@
       <span class="aad-title">🚀 Auto-Approve Deploy</span>
       <span class="aad-btns">
         <button id="aad-collapse-btn" title="Collapse panel">▶</button>
-        <button id="aad-close-btn" title="Close">×</button>
       </span>
     </div>
     <div id="aad-body">
@@ -834,6 +833,17 @@
         disconnectSkipObserver();
         disconnectSkipObserver = null;
       }
+    }, checkUrlMatch = function() {
+      const current = parseUrl();
+      if (!current || current.runId !== runId) {
+        const page = current ? `${current.owner}/${current.repo}/runs/${current.runId}` : location.pathname;
+        log(`⚠️ Page navigated away from run #${runId} → ${page}`, "warn");
+        log("⏹ Auto-stopped: monitoring only works on the original action page.", "err");
+        setStatus(el, `⚠️ Stopped: page no longer matches run #${runId}`);
+        stop();
+        return false;
+      }
+      return true;
     }, softRefresh = function() {
       log("Refreshing page...");
       location.reload();
@@ -942,6 +952,7 @@
     }
     async function poll() {
       if (!state.running) return;
+      if (!checkUrlMatch()) return;
       state.pollCycle++;
       saveRunningState(runId, true);
       log(`[poll #${state.pollCycle}] polling...`);
@@ -1052,11 +1063,6 @@
         state.pollTimer = setTimeout(poll, config.interval * 1e3);
       }
     }
-    document.getElementById("aad-close-btn").addEventListener("click", () => {
-      stop();
-      el.panel.remove();
-      el.tab.remove();
-    });
     el.$toggleBtn.addEventListener("click", () => {
       state.running ? stop() : start();
     });

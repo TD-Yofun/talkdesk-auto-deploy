@@ -33,7 +33,6 @@ export function buildUI(runId: string, config: Config): UIElements {
       <span class="aad-title">🚀 Auto-Approve Deploy</span>
       <span class="aad-btns">
         <button id="aad-collapse-btn" title="Collapse panel">▶</button>
-        <button id="aad-close-btn" title="Close">×</button>
       </span>
     </div>
     <div id="aad-body">

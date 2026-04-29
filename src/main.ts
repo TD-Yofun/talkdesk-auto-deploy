@@ -91,9 +91,26 @@ if (params) {
     }
   }
 
+  // ── URL change detection ──────────────────────────────────
+  function checkUrlMatch(): boolean {
+    const current = parseUrl();
+    if (!current || current.runId !== runId) {
+      const page = current
+        ? `${current.owner}/${current.repo}/runs/${current.runId}`
+        : location.pathname;
+      log(`⚠️ Page navigated away from run #${runId} → ${page}`, 'warn');
+      log('⏹ Auto-stopped: monitoring only works on the original action page.', 'err');
+      setStatus(el, `⚠️ Stopped: page no longer matches run #${runId}`);
+      stop();
+      return false;
+    }
+    return true;
+  }
+
   // ── Poll loop ────────────────────────────────────────────
   async function poll(): Promise<void> {
     if (!state.running) return;
+    if (!checkUrlMatch()) return;
     state.pollCycle++;
     saveRunningState(runId, true);
     log(`[poll #${state.pollCycle}] polling...`);
@@ -292,12 +309,6 @@ if (params) {
   }
 
   // ── Bind events ──────────────────────────────────────────
-  document.getElementById('aad-close-btn')!.addEventListener('click', () => {
-    stop();
-    el.panel.remove();
-    el.tab.remove();
-  });
-
   el.$toggleBtn.addEventListener('click', () => {
     state.running ? stop() : start();
   });
