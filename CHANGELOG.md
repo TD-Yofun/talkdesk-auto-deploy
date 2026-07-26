@@ -1,5 +1,12 @@
 
 
+## [1.0.14](https://github.com/TD-Yofun/github-auto-deploy/compare/v1.0.13...v1.0.14) (2026-07-26)
+
+
+### Features
+
+* add github home pull request sidebar ([78a7b9e](https://github.com/TD-Yofun/github-auto-deploy/commit/78a7b9e4769122d6aa79567cd0155e5b6a7b5204))
+
 ## [1.0.13](https://github.com/TD-Yofun/github-auto-deploy/compare/v1.0.12...v1.0.13) (2026-07-21)
 
 
