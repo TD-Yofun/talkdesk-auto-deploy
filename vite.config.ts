@@ -72,20 +72,24 @@ function minifyHTML(html: string): string {
     .trim();
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const isProd = mode === 'production';
+  const isPreview = command === 'serve' && mode === 'preview';
   const fileName = isProd
     ? 'auto-approve-deploy.min.user.js'
     : 'auto-approve-deploy.user.js';
 
   return {
     plugins: [
-      monkey({
-        entry: 'src/main.ts',
-        userscript: userscriptConfig,
-        build: { fileName },
-      }),
-      ...(isProd ? [minifyTemplateStrings()] : []),
+      ...(!isPreview ? [
+        monkey({
+          entry: 'src/main.ts',
+          userscript: userscriptConfig,
+          build: { fileName },
+          server: { mountGmApi: true },
+        }),
+        ...(isProd ? [minifyTemplateStrings()] : []),
+      ] : []),
     ],
     build: {
       outDir: 'build',

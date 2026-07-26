@@ -21,6 +21,7 @@ import {
   type UIElements,
 } from './ui/ui';
 import { mountOverviewWidget, saveRunMeta, clearRunMeta } from './ui/overview';
+import { mountPullRequestWidget } from './ui/pr-overview';
 
 const config = loadConfig();
 const state: State = createState();
@@ -535,6 +536,7 @@ function checkPage(): void {
   if (!onTarget) {
     if (el) teardownPanel();
     mountOverviewWidget(false);
+    mountPullRequestWidget(location.pathname === '/');
     return;
   }
 
@@ -544,6 +546,7 @@ function checkPage(): void {
     buildPanelFor(params!);
   }
   mountOverviewWidget(true);
+  mountPullRequestWidget(false);
 }
 
 // Initial + repeated checks (page may load Deploy (PRD) header after document-idle)

@@ -21,6 +21,7 @@ Built with **Vite + TypeScript**, outputs `build/auto-approve-deploy.user.js` (d
 - **Persistent across refreshes** — Counters, event timeline, and logs are restored after page reload via `wasRunning()` detection
 - **Logs always persisted** — Per-run log buffer survives refresh; download as `aad-run-<runId>.log` anytime
 - **Overview widget** — On non-run GitHub pages, a floating panel shows all currently monitored runs with quick-jump links
+- **My PRs sidebar section** — On `github.com/`, adds your open pull requests and open PRs reviewed by you below Top repositories; each PR opens in a new tab
 - **bfcache safe** — `pageshow.persisted` re-initializes the panel after browser back/forward navigation
 - **Global error capture** — `window.error` and `unhandledrejection` are surfaced into the panel log
 - **Version check** — Compares against the latest public userscript release asset; outdated scripts are blocked with a prominent install link
@@ -68,6 +69,10 @@ Built with **Vite + TypeScript**, outputs `build/auto-approve-deploy.user.js` (d
 ### Overview Widget
 
 When you're on any GitHub page that is **not** a Deploy (PRD) run, a small floating widget in the bottom-right shows all runs currently being monitored across your tabs (within the last 30 minutes). Click an entry to jump to that run.
+
+### My PRs Sidebar Section
+
+On the GitHub home page, a separate section below Top repositories loads your open PRs and open PRs reviewed by you through your signed-in GitHub session. It uses the current GitHub login as the author/reviewer filter, loads once when you enter the home page, and loads again only when you click refresh. When active runs exist on the home page, their overview remains a separate bottom-left widget.
 
 ## How It Works
 
@@ -153,9 +158,16 @@ npm run build:prod   # minified only
 ### Watch Mode
 
 ```bash
-npm run dev          # rebuild dev on change
+npm start            # serve the local userscript for direct GitHub debugging
+npm run dev          # alias for npm start
+npm run dev:build    # rebuild the development userscript on change
 npm run dev:all      # rebuild both on change
+npm run preview:ui   # local My PRs widget mock preview at http://127.0.0.1:5173
 ```
+
+For direct GitHub debugging, run `npm start` and install the local development
+userscript once from [http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js](http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js).
+After that, refresh any matching GitHub page after changing source files.
 
 ### Project Structure
 
@@ -168,6 +180,7 @@ src/
     log-store.ts       ← Always-on log persistence (batch buffer, debounced flush)
     session.ts         ← Session persistence across refreshes
     scheduler.ts       ← Web Worker-based timer (avoids background tab throttling)
+    pull-requests.ts   ← Signed-in GitHub HTML pull request discovery
     version-check.ts   ← Compare against latest userscript release asset; cache result
   api/
     skip-timers.ts     ← MutationObserver + 3-approach DOM-based clicker
@@ -175,6 +188,7 @@ src/
     styles.ts          ← CSS injection via GM_addStyle
     ui.ts              ← Panel build, render, event binding, summary + Markdown export
     overview.ts        ← Floating active-runs widget for non-run pages
+    pr-overview.ts     ← GitHub home pull request widget
   utils/
     helpers.ts         ← ts(), esc(), formatDuration()
     url.ts             ← URL parsing + Deploy (PRD) page detection

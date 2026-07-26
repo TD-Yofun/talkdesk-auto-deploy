@@ -278,11 +278,12 @@ export function injectStyles(): void {
     .aad-log-warn  { color: #d29922; }
     .aad-log-err   { color: #f85149; }
 
-    /* ── Overview Widget (Actions list pages) ─────────────── */
-    #aad-overview {
+    /* ── Overview Widget ─────────────────────────────────── */
+    #aad-overview,
+    #aad-pr-overview {
       position: fixed !important;
       bottom: 16px; right: 16px;
-      width: 320px;
+      width: min(360px, calc(100vw - 32px));
       background: #161b22;
       border: 1px solid #30363d;
       border-radius: 8px;
@@ -293,43 +294,185 @@ export function injectStyles(): void {
       box-shadow: 0 4px 16px rgba(0,0,0,.4);
       overflow: hidden;
     }
-    #aad-overview .aad-ov-header {
+    #aad-overview.aad-ov-home { left: 16px; right: auto; }
+    #aad-overview .aad-ov-header,
+    #aad-pr-overview .aad-ov-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      min-height: 40px;
       padding: 8px 12px;
       background: #0d1117;
       border-bottom: 1px solid #30363d;
       font-weight: 600;
     }
-    #aad-overview .aad-ov-close {
+    #aad-overview .aad-ov-actions,
+    #aad-pr-overview .aad-ov-actions { display: flex; align-items: center; gap: 2px; }
+    #aad-overview .aad-ov-close,
+    #aad-overview .aad-ov-refresh,
+    #aad-pr-overview .aad-ov-close,
+    #aad-pr-overview .aad-ov-refresh {
       background: none; border: none; color: #8b949e; cursor: pointer;
-      font-size: 16px; line-height: 1; padding: 0 4px;
+      width: 24px; height: 24px; padding: 0; border-radius: 4px;
+      font-size: 16px; line-height: 1;
     }
-    #aad-overview .aad-ov-close:hover { color: #e6edf3; }
-    #aad-overview .aad-ov-body {
-      max-height: 240px;
+    #aad-overview .aad-ov-close:hover,
+    #aad-overview .aad-ov-refresh:hover,
+    #aad-pr-overview .aad-ov-close:hover,
+    #aad-pr-overview .aad-ov-refresh:hover { color: #e6edf3; background: #21262d; }
+    #aad-pr-overview .aad-ov-refresh:disabled { cursor: wait; opacity: .5; }
+    #aad-overview .aad-ov-body,
+    #aad-pr-overview .aad-ov-body {
+      max-height: min(70vh, 560px);
       overflow-y: auto;
-      padding: 4px 0;
     }
-    #aad-overview .aad-ov-item {
-      padding: 6px 12px;
-      border-bottom: 1px solid #21262d;
+    #aad-overview .aad-ov-section,
+    #aad-pr-overview .aad-ov-section {
+      padding: 8px 0;
+      border-bottom: 1px solid #30363d;
     }
-    #aad-overview .aad-ov-item:last-child { border-bottom: none; }
-    #aad-overview .aad-ov-link {
+    #aad-overview .aad-ov-section:last-child,
+    #aad-pr-overview .aad-ov-section:last-child { border-bottom: none; }
+    #aad-overview .aad-ov-section-heading,
+    #aad-pr-overview .aad-ov-section-heading {
+      display: flex;
+      justify-content: space-between;
+      padding: 0 12px 6px;
+      color: #8b949e;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    #aad-overview .aad-ov-section-title,
+    #aad-pr-overview .aad-ov-section-title {
+      padding: 0 12px 6px;
+      color: #8b949e;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    #aad-overview .aad-ov-item,
+    #aad-pr-overview .aad-ov-item {
+      padding: 7px 12px;
+    }
+    #aad-overview .aad-ov-item:hover,
+    #aad-pr-overview .aad-ov-item:hover { background: #21262d; }
+    #aad-overview .aad-ov-link,
+    #aad-pr-overview .aad-ov-link {
       color: #58a6ff;
       text-decoration: none;
       display: block;
       font-size: 12px;
-      word-break: break-all;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-    #aad-overview .aad-ov-link:hover { text-decoration: underline; }
-    #aad-overview .aad-ov-meta {
+    #aad-overview .aad-ov-link:hover,
+    #aad-pr-overview .aad-ov-link:hover { text-decoration: underline; }
+    #aad-overview .aad-ov-meta,
+    #aad-pr-overview .aad-ov-meta {
       display: block;
       margin-top: 2px;
       color: #8b949e;
       font-size: 11px;
     }
+    #aad-overview .aad-ov-all,
+    #aad-pr-overview .aad-ov-all {
+      display: block;
+      padding: 7px 12px 1px;
+      color: #58a6ff;
+      text-decoration: none;
+      font-size: 11px;
+    }
+    #aad-overview .aad-ov-all:hover,
+    #aad-pr-overview .aad-ov-all:hover { text-decoration: underline; }
+    #aad-overview .aad-ov-empty,
+    #aad-pr-overview .aad-ov-empty {
+      padding: 20px 12px;
+      color: #8b949e;
+      text-align: center;
+    }
+    #aad-overview .aad-ov-error,
+    #aad-pr-overview .aad-ov-error { color: #f85149; }
+
+    /* ── GitHub Home Pull Requests ───────────────────────── */
+    #aad-pr-sidebar {
+      margin-top: 24px;
+      padding: 16px 0 20px;
+      border-top: 1px solid var(--borderColor-muted, #d0d7de);
+      color: var(--fgColor-default, #1f2328);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 12px;
+    }
+    #aad-pr-sidebar .aad-pr-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    #aad-pr-sidebar .aad-pr-refresh {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 1px solid var(--borderColor-default, #d0d7de);
+      border-radius: 6px;
+      color: var(--fgColor-default, #1f2328);
+      background: var(--bgColor-default, #fff);
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+    }
+    #aad-pr-sidebar .aad-pr-refresh:hover { background: var(--bgColor-muted, #f6f8fa); }
+    #aad-pr-sidebar .aad-pr-refresh:disabled { cursor: wait; opacity: .55; }
+    #aad-pr-sidebar .aad-pr-group {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--borderColor-muted, #d0d7de);
+    }
+    #aad-pr-sidebar .aad-pr-group:first-child { margin-top: 0; }
+    #aad-pr-sidebar .aad-pr-group-title {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      color: var(--fgColor-muted, #57606a);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    #aad-pr-sidebar .aad-pr-item { padding: 7px 0; }
+    #aad-pr-sidebar .aad-pr-link {
+      display: block;
+      overflow: hidden;
+      color: var(--fgColor-link, #0969da);
+      text-decoration: none;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #aad-pr-sidebar .aad-pr-link:hover,
+    #aad-pr-sidebar .aad-pr-all:hover { text-decoration: underline; }
+    #aad-pr-sidebar .aad-pr-meta {
+      display: block;
+      margin-top: 3px;
+      overflow: hidden;
+      color: var(--fgColor-muted, #57606a);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #aad-pr-sidebar .aad-pr-all {
+      display: block;
+      margin-top: 4px;
+      color: var(--fgColor-link, #0969da);
+      text-decoration: none;
+      font-size: 12px;
+    }
+    #aad-pr-sidebar .aad-pr-empty {
+      padding: 12px 0;
+      color: var(--fgColor-muted, #57606a);
+      text-align: center;
+    }
+    #aad-pr-sidebar .aad-pr-error { color: var(--fgColor-danger, #cf222e); }
   `);
 }

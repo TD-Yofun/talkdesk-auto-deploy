@@ -1,9 +1,4 @@
-/**
- * Floating "active monitored runs" widget shown on non-run GitHub pages
- * (Actions list, repo home, etc.) when one or more runs are being actively monitored.
- *
- * Uses GM_listValues to scan `aad_running_${runId}` keys.
- */
+/** Floating overview for active monitored runs on non-run GitHub pages. */
 import { esc, formatDuration } from '../utils/helpers';
 
 const STALE_MS = 30 * 60 * 1000;
@@ -19,18 +14,22 @@ interface ActiveRun {
   workflow?: string;
 }
 
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let dismissed = false;
+let lastPath = '';
+
 function listActiveRuns(): ActiveRun[] {
   if (typeof GM_listValues !== 'function') return [];
   const now = Date.now();
-  const out: ActiveRun[] = [];
+  const runs: ActiveRun[] = [];
   for (const key of GM_listValues()) {
     if (!key.startsWith('aad_running_')) continue;
     const ts = GM_getValue<number>(key, 0);
-    if (!ts || (now - ts) > STALE_MS) continue;
+    if (!ts || now - ts > STALE_MS) continue;
     const runId = key.slice('aad_running_'.length);
     const session = GM_getValue<any>(`aad_session_${runId}`, null);
     const meta = GM_getValue<any>(`aad_meta_${runId}`, null);
-    out.push({
+    runs.push({
       runId,
       startedAt: session?.startedAt || ts,
       approved: session?.approved || 0,
@@ -40,7 +39,7 @@ function listActiveRuns(): ActiveRun[] {
       workflow: meta?.workflow,
     });
   }
-  return out.sort((a, b) => b.startedAt - a.startedAt);
+  return runs.sort((a, b) => b.startedAt - a.startedAt);
 }
 
 /** Persist minimal metadata for a run so the overview widget can render links. */
@@ -53,46 +52,49 @@ export function saveRunMeta(runId: string, meta: { owner: string; repo: string; 
 
 function renderWidget(runs: ActiveRun[]): void {
   let widget = document.getElementById(WIDGET_ID);
-  if (runs.length === 0) {
-    if (widget) widget.remove();
+  if (runs.length === 0 || dismissed) {
+    widget?.remove();
     return;
   }
   if (!widget) {
-    widget = document.createElement('div');
+    widget = document.createElement('aside');
     widget.id = WIDGET_ID;
     document.body.appendChild(widget);
   }
+  widget.classList.toggle('aad-ov-home', location.pathname === '/');
+
   const now = Date.now();
-  const items = runs.map((r) => {
-    const elapsed = formatDuration(now - r.startedAt);
-    const label = r.workflow && r.owner && r.repo
-      ? `${esc(r.owner)}/${esc(r.repo)} · ${esc(r.workflow)} #${esc(r.runId)}`
-      : `Run #${esc(r.runId)}`;
-    const href = r.url || `#`;
+  const items = runs.map((run) => {
+    const label = run.workflow && run.owner && run.repo
+      ? `${esc(run.owner)}/${esc(run.repo)} · ${esc(run.workflow)} #${esc(run.runId)}`
+      : `Run #${esc(run.runId)}`;
     return `<div class="aad-ov-item">
-      <a href="${esc(href)}" class="aad-ov-link">${label}</a>
-      <span class="aad-ov-meta">⏱ ${elapsed} · ✅ ${r.approved || 0}</span>
+      <a href="${esc(run.url || '#')}" class="aad-ov-link">${label}</a>
+      <span class="aad-ov-meta">${formatDuration(now - run.startedAt)} · ${run.approved || 0} approvals</span>
     </div>`;
   }).join('');
-  widget.innerHTML = `
-    <div class="aad-ov-header">
-      <span>🚀 AAD · ${runs.length} active</span>
-      <button class="aad-ov-close" title="Hide">×</button>
-    </div>
-    <div class="aad-ov-body">${items}</div>
-  `;
-  widget.querySelector('.aad-ov-close')?.addEventListener('click', () => widget!.remove());
+
+  widget.innerHTML = `<div class="aad-ov-header">
+    <span>AAD · ${runs.length} active</span>
+    <button class="aad-ov-close" title="Hide active runs">×</button>
+  </div>
+  <div class="aad-ov-body">${items}</div>`;
+  widget.querySelector('.aad-ov-close')?.addEventListener('click', () => {
+    dismissed = true;
+    widget?.remove();
+  });
 }
 
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
-
-/** Mount/refresh the overview widget. Safe to call repeatedly. */
+/** Mount/refresh the active runs overview. Safe to call repeatedly. */
 export function mountOverviewWidget(isOnRunPage: boolean): void {
   if (isOnRunPage) {
-    // The main panel is the source of truth on a run page; hide overview
     document.getElementById(WIDGET_ID)?.remove();
     if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
     return;
+  }
+  if (lastPath !== location.pathname) {
+    dismissed = false;
+    lastPath = location.pathname;
   }
   const tick = () => renderWidget(listActiveRuns());
   tick();

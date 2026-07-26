@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite build --mode development --watch",
+    "start": "vite --host 127.0.0.1",
+    "dev": "vite --host 127.0.0.1",
+    "dev:build": "vite build --mode development --watch",
     "dev:all": "concurrently \"vite build --mode development --watch\" \"vite build --mode production --watch\"",
+    "preview:ui": "vite --mode preview --host 127.0.0.1",
     "build": "vite build --mode development && vite build --mode production",
     "build:dev": "vite build --mode development",
     "build:prod": "vite build --mode production",

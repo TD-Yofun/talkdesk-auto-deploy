@@ -21,6 +21,7 @@
 - **跨刷新持久化** —— 通过 `wasRunning()` 检测，刷新后自动恢复计数器、事件时间线和日志
 - **日志始终持久化** —— 每个 run 的日志缓冲区跨刷新保留，可随时下载 `aad-run-<runId>.log`
 - **概览小部件** —— 当你不在 run 详情页时，右下角浮动面板显示所有正在监控的 run（30 分钟内活跃），点击直达
+- **My PRs 侧栏区块** —— 在 `github.com/` 首页的 Top repositories 下方显示我创建的 Open PR 与我已 Review 的 Open PR；点击会在新标签页打开
 - **bfcache 安全** —— 通过 `pageshow.persisted` 在浏览器前进/后退后重新初始化面板
 - **全局错误捕获** —— `window.error` 和 `unhandledrejection` 会输出到面板日志
 - **版本检查** —— 与最新公开 userscript release asset 比对，过期脚本会被显眼地拦截并提供安装链接
@@ -68,6 +69,10 @@
 ### 概览小部件
 
 当你在任意 **非** Deploy (PRD) run 的 GitHub 页面时，右下角会有一个小浮窗显示所有标签页里当前正在监控的 run（30 分钟内活跃）。点击某条记录可直达该 run。
+
+### My PRs 侧栏区块
+
+在 GitHub 首页，Top repositories 下方的独立区块会通过当前已登录的 GitHub 会话加载我创建的 Open PR 和我已 Review 的 Open PR。它使用当前 GitHub 登录账号作为 author/reviewer 过滤条件，首次进入首页时加载，之后仅在点击刷新按钮时重新加载。首页存在 Active Run 时，运行概览仍会独立显示在左下角。
 
 ## 工作原理
 
@@ -150,9 +155,16 @@ npm run build:prod   # 仅压缩版
 ### Watch 模式
 
 ```bash
-npm run dev          # 改动时重新构建 dev
+npm start            # 提供本地 userscript，直接在 GitHub 页面调试
+npm run dev          # npm start 的别名
+npm run dev:build    # 改动时重新构建开发版 userscript
 npm run dev:all      # 改动时同时重新构建两份
+npm run preview:ui   # 本地预览 My PRs 小部件：http://127.0.0.1:5173
 ```
+
+要直接在 GitHub 页面调试，运行 `npm start` 后，首次打开并安装本地开发脚本：
+[http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js](http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js)。
+之后修改源码并刷新匹配的 GitHub 页面即可生效。
 
 ### 项目结构
 
@@ -165,6 +177,7 @@ src/
     log-store.ts       ← 始终开启的日志持久化（批量缓冲、防抖写盘）
     session.ts         ← 跨刷新的 session 持久化
     scheduler.ts       ← 基于 Web Worker 的定时器（规避后台标签页节流）
+    pull-requests.ts   ← 基于已登录 GitHub HTML 的 PR 查询
     version-check.ts   ← 与最新 GitHub Release 比对，结果缓存
   api/
     skip-timers.ts     ← MutationObserver + 3 种 DOM 点击策略
@@ -172,6 +185,7 @@ src/
     styles.ts          ← 通过 GM_addStyle 注入 CSS
     ui.ts              ← 面板构建、渲染、事件绑定、总结 + Markdown 导出
     overview.ts        ← 非 run 页面的活跃 run 浮动小部件
+    pr-overview.ts     ← GitHub 首页 PR 小部件
   utils/
     helpers.ts         ← ts()、esc()、formatDuration()
     url.ts             ← URL 解析 + Deploy (PRD) 页面检测

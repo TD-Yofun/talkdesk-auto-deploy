@@ -15,6 +15,7 @@ src/
 │   ├── log-store.ts             # Always-on per-run log buffer with debounced GM_setValue flush
 │   ├── session.ts               # SessionData (cross-refresh resume); keyed by runId
 │   ├── scheduler.ts             # Web Worker-based scheduleTick/cancelTick (avoids background tab throttling)
+│   ├── pull-requests.ts         # Signed-in GitHub HTML pull request discovery
 │   └── version-check.ts         # Compare vs latest userscript release asset; cache result; block outdated
 ├── api/
 │   └── skip-timers.ts           # MutationObserver + 3 click strategies for the gate button
@@ -22,6 +23,7 @@ src/
 │   ├── styles.ts                # GM_addStyle CSS for panel + overview widget
 │   ├── ui.ts                    # Panel HTML/render/event binding; summary report + Markdown export
 │   └── overview.ts              # Floating active-runs widget for non-run GitHub pages
+│   └── pr-overview.ts           # GitHub home pull request section below Top repositories
 └── utils/
     ├── helpers.ts               # ts(), esc(), formatDuration()
     └── url.ts                   # parseRunUrl() + isDeployPrdPage() (matches /Deploy\s*\(PRD\)/)
@@ -108,6 +110,12 @@ window.addEventListener('unhandledrejection', /* → log */);
 - Refreshes every 5s via `setInterval`
 - `saveRunMeta(runId, {...})` called from `start()` / `resume()` / panel build; `clearRunMeta(runId)` on manual stop
 
+### Pull request sidebar section (pr-overview.ts)
+
+- Mounted only on `github.com/` below Top repositories; it is independent from the Active Runs overview
+- Fetches authored and `reviewed-by` open PRs for the current `meta[name="user-login"]` account from GitHub's authenticated HTML search pages once per home-page visit, then only when the refresh button is clicked
+- Uses `target="_blank"` links for direct PR navigation
+
 ### Cross-refresh resume
 
 - `wasRunning(runId)` checks `aad_running_${runId}`
@@ -122,7 +130,9 @@ All state is keyed by `runId`, so multiple tabs running different deploys are in
 
 - `npm run build` → both dev + minified into project root
 - `npm run build:dev` / `npm run build:prod` → individual builds
-- `npm run dev` / `npm run dev:all` → watch mode
+- `npm start` / `npm run dev` → local userscript server for direct GitHub debugging; install `__vite-plugin-monkey.install.user.js` once in Tampermonkey
+- `npm run dev:build` / `npm run dev:all` → build watch modes
+- `npm run preview:ui` → local Vite preview for the My PRs overview widget
 - **Always run `npm run build` after touching `src/**`** before committing — both `.user.js` files must be in sync with source.
 - Release: `npm run release -- patch|minor|major` (release-it bumps + builds + commits + tags), then `git push --follow-tags origin main` → `.github/workflows/release.yml` creates GitHub Release with both artifacts. Full procedure: `.agents/skills/release/SKILL.md`.
 
