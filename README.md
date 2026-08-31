@@ -186,7 +186,8 @@ src/
   api/
     skip-timers.ts     ← MutationObserver + 3-approach DOM-based clicker
   ui/
-    styles.ts          ← CSS injection via GM_addStyle
+    styles.ts          ← Injects compiled Sass through GM_addStyle
+    styles.scss        ← Panel, overview, and sidebar Sass styles
     ui.ts              ← Panel build, render, event binding, summary + Markdown export
     overview.ts        ← Floating active-runs widget for non-run pages
     pr-overview.ts     ← GitHub home pull request widget

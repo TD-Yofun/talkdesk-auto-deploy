@@ -183,7 +183,8 @@ src/
   api/
     skip-timers.ts     ← MutationObserver + 3 种 DOM 点击策略
   ui/
-    styles.ts          ← 通过 GM_addStyle 注入 CSS
+    styles.ts          ← 通过 GM_addStyle 注入编译后的 Sass
+    styles.scss        ← 面板、概览和侧栏的 Sass 样式
     ui.ts              ← 面板构建、渲染、事件绑定、总结 + Markdown 导出
     overview.ts        ← 非 run 页面的活跃 run 浮动小部件
     pr-overview.ts     ← GitHub 首页 PR 小部件

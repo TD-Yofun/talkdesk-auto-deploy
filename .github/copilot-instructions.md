@@ -20,7 +20,8 @@ src/
 ├── api/
 │   └── skip-timers.ts           # MutationObserver + 3 click strategies for the gate button
 ├── ui/
-│   ├── styles.ts                # GM_addStyle CSS for panel + overview widget
+│   ├── styles.ts                # Injects compiled Sass via GM_addStyle
+│   ├── styles.scss              # Panel, overview, and sidebar Sass styles
 │   ├── ui.ts                    # Panel HTML/render/event binding; summary report + Markdown export
 │   └── overview.ts              # Floating active-runs widget for non-run GitHub pages
 │   └── pr-overview.ts           # GitHub home pull request section below Top repositories

@@ -1,4 +1,4 @@
-import './preview.css';
+import './preview.scss';
 
 const opened = [
   ['Talkdesk/atlas-apps-configuration', '#624', 'Prevent duplicate watchdog recovery'],

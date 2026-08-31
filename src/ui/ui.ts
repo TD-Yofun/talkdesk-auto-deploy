@@ -79,7 +79,7 @@ export function buildUI(runId: string, config: Config): UIElements {
     $summary: document.getElementById('aad-summary')!,
   };
 
-  if (config.saveLog) el.$logPath.style.display = 'block';
+  el.$logPath.classList.toggle('aad-visible', config.saveLog);
 
   // Restore panel visibility from config
   if (!config.panelVisible) {
@@ -106,7 +106,7 @@ export function renderRunInfo(el: UIElements, info: { owner: string; repo: strin
   el.$info.innerHTML = `
     <strong>${esc(info.owner)}/${esc(info.repo)}</strong><br>
     <span class="aad-run-name">${esc(info.workflow || 'Workflow')}</span>${info.branch ? ' · ' + esc(info.branch) : ''}<br>
-    Run: <a href="/${esc(info.owner)}/${esc(info.repo)}/actions/runs/${esc(info.runId)}" style="color:#58a6ff">#${esc(info.runId)}</a>
+    Run: <a class="aad-run-link" href="/${esc(info.owner)}/${esc(info.repo)}/actions/runs/${esc(info.runId)}">#${esc(info.runId)}</a>
   `;
 }
 
@@ -276,11 +276,11 @@ export function generateSummary(el: UIElements, state: State, config: Config, co
       </div>
     </div>
     ${state.sessionEvents.length > 0 ? `
-      <div class="aad-summary-header" style="margin-top:8px"><span>📋 执行时间线</span></div>
+      <div class="aad-summary-header aad-summary-timeline-header"><span>📋 执行时间线</span></div>
       <div class="aad-timeline">${timelineHtml}</div>
     ` : ''}
   `;
-  el.$summary.style.display = 'block';
+  el.$summary.classList.add('aad-visible');
 
   const copyBtn = el.$summary.querySelector<HTMLButtonElement>('#aad-copy-summary-btn');
   copyBtn?.addEventListener('click', async () => {

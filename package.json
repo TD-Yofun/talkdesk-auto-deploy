@@ -25,6 +25,7 @@
     "@types/tampermonkey": "^5.0.5",
     "concurrently": "^9.2.1",
     "release-it": "^17.11.0",
+    "sass": "^1.103.1",
     "typescript": "^6.0.3",
     "vite": "^6.4.2",
     "vite-plugin-monkey": "^7.1.9"

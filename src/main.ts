@@ -261,7 +261,7 @@ function start(): void {
   if (el) el.$log.innerHTML = '';
   saveRunningState(cur.runId, true);
   if (currentMeta) saveRunMeta(cur.runId, currentMeta);
-  if (el) el.$summary.style.display = 'none';
+  if (el) el.$summary.classList.remove('aad-visible');
   recordEvent('start', `Started on run #${cur.runId} (interval=${config.interval}s)`);
   log(`🚀 Started monitoring run #${cur.runId} (interval=${config.interval}s)`);
   if (el) renderToggle(el, true, false);
@@ -284,7 +284,7 @@ function resume(): void {
   if (!state.lastProgressAt) state.lastProgressAt = Date.now();
   saveRunningState(cur.runId, true);
   if (currentMeta) saveRunMeta(cur.runId, currentMeta);
-  if (el) el.$summary.style.display = 'none';
+  if (el) el.$summary.classList.remove('aad-visible');
   recordEvent('resume', `Resumed after page refresh`);
   log(`🚀 Resumed monitoring run #${cur.runId} (interval=${config.interval}s)`);
   if (el) {
@@ -450,7 +450,7 @@ function bindPanelEvents(panel: UIElements, runId: string): void {
   panel.$chkSaveLog.addEventListener('change', () => {
     config.saveLog = panel.$chkSaveLog.checked;
     saveConfigField('saveLog', config.saveLog);
-    panel.$logPath.style.display = config.saveLog ? 'block' : 'none';
+    panel.$logPath.classList.toggle('aad-visible', config.saveLog);
     log(config.saveLog ? `💾 日志记录已开启 — 文件: aad-run-${runId}.log` : '💾 日志记录已关闭', config.saveLog ? 'ok' : 'info');
   });
 
@@ -502,15 +502,15 @@ async function runVersionCheck(): Promise<void> {
       versionBlocked = true;
       const installUrl = `https://github.com/TD-Yofun/github-auto-deploy/releases/latest/download/auto-approve-deploy.min.user.js`;
       const notesHtml = v.releaseNotes
-        ? `<details open style="margin-top:8px"><summary style="cursor:pointer;color:#7d8590;font-size:11px">📋 v${esc(v.latest)} 更新内容</summary>
-             <div style="margin-top:4px;padding:6px 8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;font-size:11px;line-height:1.5;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-word">${esc(v.releaseNotes)}</div>
+        ? `<details open class="aad-version-notes"><summary class="aad-version-notes-summary">📋 v${esc(v.latest)} 更新内容</summary>
+             <div class="aad-version-notes-body">${esc(v.releaseNotes)}</div>
            </details>`
         : '';
-      el.$info.innerHTML = `<div style="color:#f85149;font-weight:600">⛔ 脚本版本过期，请更新后使用</div>
-        <div style="margin-top:4px;font-size:11px">当前: <code>${esc(v.current)}</code> · 最新: <code>${esc(v.latest)}</code></div>
-        <div style="margin-top:8px">
-          <a href="${esc(installUrl)}" target="_blank" rel="noopener" style="display:inline-block;padding:6px 12px;background:#238636;color:#fff;border-radius:4px;text-decoration:none;font-weight:600">📥 安装最新版本</a>
-          <a href="${esc(v.releaseUrl)}" target="_blank" rel="noopener" style="margin-left:8px;color:#58a6ff;font-size:11px">查看 Release 页</a>
+      el.$info.innerHTML = `<div class="aad-version-error">⛔ 脚本版本过期，请更新后使用</div>
+        <div class="aad-version-current">当前: <code>${esc(v.current)}</code> · 最新: <code>${esc(v.latest)}</code></div>
+        <div class="aad-version-actions">
+          <a href="${esc(installUrl)}" target="_blank" rel="noopener" class="aad-version-install">📥 安装最新版本</a>
+          <a href="${esc(v.releaseUrl)}" target="_blank" rel="noopener" class="aad-version-release">查看 Release 页</a>
         </div>
         ${notesHtml}`;
       log(`⛔ Outdated: ${v.current} → ${v.latest}. Update required.`, 'err');

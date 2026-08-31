@@ -29,7 +29,7 @@ const userscriptConfig: MonkeyUserScript = {
   'run-at': 'document-idle',
 };
 
-/** Minify CSS inside GM_addStyle(`...`) and HTML inside .innerHTML = `...` */
+/** Minify HTML inside .innerHTML = `...`; Sass is compiled and minified by Vite. */
 function minifyTemplateStrings(): Plugin {
   return {
     name: 'minify-template-strings',
@@ -37,12 +37,6 @@ function minifyTemplateStrings(): Plugin {
     generateBundle(_, bundle) {
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== 'chunk') continue;
-
-        // Minify CSS in GM_addStyle(`...`)
-        chunk.code = chunk.code.replace(
-          /(GM_addStyle\s*\(\s*`)([^`]+)(`\s*\))/g,
-          (_, pre, css, post) => pre + minifyCSS(css) + post,
-        );
 
         // Minify HTML in template literals assigned to .innerHTML
         chunk.code = chunk.code.replace(
@@ -52,16 +46,6 @@ function minifyTemplateStrings(): Plugin {
       }
     },
   };
-}
-
-function minifyCSS(css: string): string {
-  return css
-    .replace(/\/\*[^*]*\*+([^/*][^*]*\*+)*\//g, '') // remove comments
-    .replace(/\s*\n\s*/g, '')                         // collapse newlines
-    .replace(/\s*([{}:;,>~+])\s*/g, '$1')            // remove space around symbols
-    .replace(/;}/g, '}')                              // remove trailing semicolons
-    .replace(/\s{2,}/g, ' ')                          // collapse remaining whitespace
-    .trim();
 }
 
 function minifyHTML(html: string): string {
