@@ -135,34 +135,35 @@
 
 ### 前置条件
 
-- [Node.js](https://nodejs.org/) >= 18
-- npm
+- [Node.js](https://nodejs.org/) >= 18.12
+- Corepack（随受支持的 Node.js 版本提供）
 
 ### 安装依赖
 
 ```bash
-npm install
+corepack enable
+yarn install
 ```
 
 ### 构建
 
 ```bash
-npm run build        # 同时构建 dev 和压缩版
-npm run build:dev    # 仅 dev
-npm run build:prod   # 仅压缩版
+yarn build        # 同时构建 dev 和压缩版
+yarn build:dev    # 仅 dev
+yarn build:prod   # 仅压缩版
 ```
 
 ### Watch 模式
 
 ```bash
-npm start            # 提供本地 userscript，直接在 GitHub 页面调试
-npm run dev          # npm start 的别名
-npm run dev:build    # 改动时重新构建开发版 userscript
-npm run dev:all      # 改动时同时重新构建两份
-npm run preview:ui   # 本地预览 My PRs 小部件：http://127.0.0.1:5173
+yarn start            # 提供本地 userscript，直接在 GitHub 页面调试
+yarn dev              # yarn start 的别名
+yarn dev:build        # 改动时重新构建开发版 userscript
+yarn dev:all          # 改动时同时重新构建两份
+yarn preview:ui       # 本地预览 My PRs 小部件：http://127.0.0.1:5173
 ```
 
-要直接在 GitHub 页面调试，运行 `npm start` 后，首次打开并安装本地开发脚本：
+要直接在 GitHub 页面调试，运行 `yarn start` 后，首次打开并安装本地开发脚本：
 [http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js](http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js)。
 之后修改源码并刷新匹配的 GitHub 页面即可生效。
 
@@ -200,7 +201,7 @@ src/
 
 ### 发布流程
 
-本地：`npm run release -- patch`（release-it）升版本号、构建、提交、打 tag。然后 `git push --follow-tags origin main` 触发 `.github/workflows/release.yml`，自动创建 GitHub Release 并上传两份 `.user.js` 产物。完整流程见 `.agents/skills/release/SKILL.md`。
+本地：`yarn release -- patch`（release-it）升版本号、构建、提交、打 tag。然后 `git push --follow-tags origin main` 触发 `.github/workflows/release.yml`，自动创建 GitHub Release 并上传两份 `.user.js` 产物。完整流程见 `.agents/skills/release/SKILL.md`。
 
 ## License
 

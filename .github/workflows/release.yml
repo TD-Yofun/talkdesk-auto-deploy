@@ -21,13 +21,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+          cache: yarn
+
+      - name: Enable Corepack
+        run: corepack enable
 
       - name: Install dependencies
-        run: npm ci
+        run: yarn install --immutable
 
       - name: Build userscript
-        run: npm run build
+        run: yarn build
 
       - name: Verify built version matches tag
         run: |

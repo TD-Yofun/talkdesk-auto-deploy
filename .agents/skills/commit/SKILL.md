@@ -140,5 +140,5 @@ After committing, run `git log --oneline origin/main..HEAD` and report the resul
 
 - **Mixed changes** (e.g., feature + docs): Prefer one commit if they're related. Split only if truly independent.
 - **Amend last commit**: Use `git commit --amend` when the user asks to fix the previous commit.
-- **TypeScript build**: Run `npm run build` to verify the project compiles before committing significant `src/` changes. Do **not** commit the generated `auto-approve-deploy*.user.js` files — they are gitignored / built in CI.
+- **TypeScript build**: Run `yarn build` to verify the project compiles before committing significant `src/` changes. Do **not** commit the generated `auto-approve-deploy*.user.js` files — they are gitignored / built in CI.
 - **Docs out of date but user declines update**: Proceed with code commit, but record a TODO note in the commit body so it's not forgotten.

@@ -1,4 +1,10 @@
 node_modules/
 dist/
 build/
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+.pnp.*
 *.tgz

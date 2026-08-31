@@ -15,7 +15,7 @@
     "publish": false
   },
   "hooks": {
-    "after:bump": "npm run build",
+    "after:bump": "yarn build",
     "after:release": "echo Local release prepared for ${name} v${version}. Run: git push --follow-tags origin main"
   },
   "plugins": {

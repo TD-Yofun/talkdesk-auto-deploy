@@ -138,34 +138,35 @@ All three rely on your existing browser session cookies — no API token is need
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) >= 18
-- npm
+- [Node.js](https://nodejs.org/) >= 18.12
+- Corepack (bundled with supported Node.js releases)
 
 ### Setup
 
 ```bash
-npm install
+corepack enable
+yarn install
 ```
 
 ### Build
 
 ```bash
-npm run build        # both dev + minified
-npm run build:dev    # dev only
-npm run build:prod   # minified only
+yarn build        # both dev + minified
+yarn build:dev    # dev only
+yarn build:prod   # minified only
 ```
 
 ### Watch Mode
 
 ```bash
-npm start            # serve the local userscript for direct GitHub debugging
-npm run dev          # alias for npm start
-npm run dev:build    # rebuild the development userscript on change
-npm run dev:all      # rebuild both on change
-npm run preview:ui   # local My PRs widget mock preview at http://127.0.0.1:5173
+yarn start            # serve the local userscript for direct GitHub debugging
+yarn dev              # alias for yarn start
+yarn dev:build        # rebuild the development userscript on change
+yarn dev:all          # rebuild both on change
+yarn preview:ui       # local My PRs widget mock preview at http://127.0.0.1:5173
 ```
 
-For direct GitHub debugging, run `npm start` and install the local development
+For direct GitHub debugging, run `yarn start` and install the local development
 userscript once from [http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js](http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js).
 After that, refresh any matching GitHub page after changing source files.
 
@@ -203,7 +204,7 @@ src/
 
 ### Release Flow
 
-Local: `npm run release -- patch` (release-it) bumps version, builds, commits, tags. Then `git push --follow-tags origin main` triggers `.github/workflows/release.yml` which creates the GitHub Release and uploads both `.user.js` artifacts. See `.agents/skills/release/SKILL.md` for the full workflow.
+Local: `yarn release -- patch` (release-it) bumps version, builds, commits, tags. Then `git push --follow-tags origin main` triggers `.github/workflows/release.yml` which creates the GitHub Release and uploads both `.user.js` artifacts. See `.agents/skills/release/SKILL.md` for the full workflow.
 
 ## License
 
