@@ -1,5 +1,12 @@
 
 
+## [1.0.16](https://github.com/TD-Yofun/github-auto-deploy/compare/v1.0.15...v1.0.16) (2026-08-31)
+
+
+### Bug Fixes
+
+* initialize corepack before release install ([5a67252](https://github.com/TD-Yofun/github-auto-deploy/commit/5a67252fae4b603b26ace8e1749fa6500c56c075))
+
 ## [1.0.15](https://github.com/TD-Yofun/github-auto-deploy/compare/v1.0.14...v1.0.15) (2026-08-31)
 
 

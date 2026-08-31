@@ -1,6 +1,6 @@
 {
   "name": "github-auto-deploy",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "private": true,
   "type": "module",
   "packageManager": "yarn@4.9.2",
