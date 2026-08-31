@@ -67,7 +67,7 @@ For every doc below, decide if it is **STALE** (needs update) or **OK** (still a
 
 2. **`README.md`** (English) — STALE if user-visible behavior changed:
    - New buttons / controls in the panel
-   - New features (notifications, pause, overview widget, watchdog, etc.)
+   - New features (notifications, pause, watchdog, etc.)
    - Install / update instructions changed
    - Screenshots out of date
    - Permissions / grants changed

@@ -11,9 +11,9 @@ const reviews = [
 ];
 
 function renderItems(items: string[][]): string {
-  return items.map(([repo, number, title]) => `<div class="aad-ov-item">
-    <a href="https://github.com" target="_blank" rel="noopener" class="aad-ov-link">${title}</a>
-    <span class="aad-ov-meta">${repo} · ${number}</span>
+  return items.map(([repo, number, title]) => `<div class="aad-pr-item">
+    <a href="https://github.com" target="_blank" rel="noopener" class="aad-pr-link">${title}</a>
+    <span class="aad-pr-meta">${repo} · ${number}</span>
   </div>`).join('');
 }
 

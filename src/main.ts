@@ -20,7 +20,6 @@ import {
   setStatus, addLog, restoreLogsToPanel, generateSummary,
   type UIElements,
 } from './ui/ui';
-import { mountOverviewWidget, saveRunMeta, clearRunMeta } from './ui/overview';
 import { mountPullRequestWidget } from './ui/pr-overview';
 
 const config = loadConfig();
@@ -260,7 +259,6 @@ function start(): void {
   clearStoredLogs();
   if (el) el.$log.innerHTML = '';
   saveRunningState(cur.runId, true);
-  if (currentMeta) saveRunMeta(cur.runId, currentMeta);
   if (el) el.$summary.classList.remove('aad-visible');
   recordEvent('start', `Started on run #${cur.runId} (interval=${config.interval}s)`);
   log(`🚀 Started monitoring run #${cur.runId} (interval=${config.interval}s)`);
@@ -283,7 +281,6 @@ function resume(): void {
   loadSession(cur.runId, state);
   if (!state.lastProgressAt) state.lastProgressAt = Date.now();
   saveRunningState(cur.runId, true);
-  if (currentMeta) saveRunMeta(cur.runId, currentMeta);
   if (el) el.$summary.classList.remove('aad-visible');
   recordEvent('resume', `Resumed after page refresh`);
   log(`🚀 Resumed monitoring run #${cur.runId} (interval=${config.interval}s)`);
@@ -392,7 +389,6 @@ function stop(manual = true): void {
   state.running = false;
   state.paused = false;
   if (state.startRunId) saveRunningState(state.startRunId, false);
-  if (state.startRunId) clearRunMeta(state.startRunId);
   stopSkipObserver();
   stopStatusObserver();
   cancelTick();
@@ -535,7 +531,6 @@ function checkPage(): void {
 
   if (!onTarget) {
     if (el) teardownPanel();
-    mountOverviewWidget(false);
     mountPullRequestWidget(location.pathname === '/');
     return;
   }
@@ -545,7 +540,6 @@ function checkPage(): void {
     if (el) teardownPanel();
     buildPanelFor(params!);
   }
-  mountOverviewWidget(true);
   mountPullRequestWidget(false);
 }
 

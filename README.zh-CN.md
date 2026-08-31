@@ -20,7 +20,6 @@
 - **看门狗自动刷新** —— 若 10 分钟无进展则自动 reload 页面，并基于 session 恢复监控
 - **跨刷新持久化** —— 通过 `wasRunning()` 检测，刷新后自动恢复计数器、事件时间线和日志
 - **日志始终持久化** —— 每个 run 的日志缓冲区跨刷新保留，可随时下载 `aad-run-<runId>.log`
-- **概览小部件** —— 当你不在 run 详情页时，右下角浮动面板显示所有正在监控的 run（30 分钟内活跃），点击直达
 - **My PRs 侧栏区块** —— 在 `github.com/` 首页的 Top repositories 下方显示我创建的 Open PR 与我已 Review 的 Open PR；点击会在新标签页打开
 - **bfcache 安全** —— 通过 `pageshow.persisted` 在浏览器前进/后退后重新初始化面板
 - **全局错误捕获** —— `window.error` 和 `unhandledrejection` 会输出到面板日志
@@ -66,13 +65,9 @@
 - 点击右侧边缘的 **◀ AAD** 标签展开/收起面板
 - 标题栏的 **▶** 按钮收起面板
 
-### 概览小部件
-
-当你在任意 **非** Deploy (PRD) run 的 GitHub 页面时，右下角会有一个小浮窗显示所有标签页里当前正在监控的 run（30 分钟内活跃）。点击某条记录可直达该 run。
-
 ### My PRs 侧栏区块
 
-在 GitHub 首页，Top repositories 下方的独立区块会通过当前已登录的 GitHub 会话加载我创建的 Open PR 和我已 Review 的 Open PR。它使用当前 GitHub 登录账号作为 author/reviewer 过滤条件，首次进入首页时加载，之后仅在点击刷新按钮时重新加载。首页存在 Active Run 时，运行概览仍会独立显示在左下角。
+在 GitHub 首页，Top repositories 下方的独立区块会通过当前已登录的 GitHub 会话加载我创建的 Open PR 和我已 Review 的 Open PR。它使用当前 GitHub 登录账号作为 author/reviewer 过滤条件，首次进入首页时加载，之后仅在点击刷新按钮时重新加载。
 
 ## 工作原理
 
@@ -87,12 +82,11 @@
             │    且头部 label 匹配          │
             │       /Deploy\s*\(PRD\)/      │
             └─┬─────────────────────────────┘
-       否     │ 是
-   ┌──────────▼─────────────┐      ┌─────────────────────────┐
-   │ 若存在活跃 run，        │      │ 构建侧边面板 + 日志存储；│
-   │ 显示概览小部件          │      │ 恢复日志；若上次在运行   │
-   └────────────────────────┘      │ 则自动恢复               │
-                                    └────────┬────────────────┘
+                                  ┌──────────▼───────────────┐
+                                  │ 构建侧边面板 + 日志存储；  │
+                                  │ 恢复日志；若上次在运行    │
+                                  │ 则自动恢复                │
+                                  └──────────┬────────────────┘
                                              │
                                   ┌──────────▼──────────────┐
                                   │ 用户点击 ▶ Start        │
@@ -184,9 +178,8 @@ src/
     skip-timers.ts     ← MutationObserver + 3 种 DOM 点击策略
   ui/
     styles.ts          ← 通过 GM_addStyle 注入编译后的 Sass
-    styles.scss        ← 面板、概览和侧栏的 Sass 样式
+    styles.scss        ← 面板和侧栏的 Sass 样式
     ui.ts              ← 面板构建、渲染、事件绑定、总结 + Markdown 导出
-    overview.ts        ← 非 run 页面的活跃 run 浮动小部件
     pr-overview.ts     ← GitHub 首页 PR 小部件
   utils/
     helpers.ts         ← ts()、esc()、formatDuration()

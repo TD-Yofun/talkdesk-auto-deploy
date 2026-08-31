@@ -21,9 +21,8 @@ src/
 │   └── skip-timers.ts           # MutationObserver + 3 click strategies for the gate button
 ├── ui/
 │   ├── styles.ts                # Injects compiled Sass via GM_addStyle
-│   ├── styles.scss              # Panel, overview, and sidebar Sass styles
+│   ├── styles.scss              # Panel and sidebar Sass styles
 │   ├── ui.ts                    # Panel HTML/render/event binding; summary report + Markdown export
-│   └── overview.ts              # Floating active-runs widget for non-run GitHub pages
 │   └── pr-overview.ts           # GitHub home pull request section below Top repositories
 └── utils/
     ├── helpers.ts               # ts(), esc(), formatDuration()
@@ -35,12 +34,11 @@ src/
 ### Tampermonkey grants (vite.config.ts)
 
 ```
-GM_addStyle, GM_getValue, GM_setValue, GM_deleteValue, GM_listValues,
+GM_addStyle, GM_getValue, GM_setValue,
 GM_notification, unsafeWindow
 ```
 
 - `GM_notification` — desktop notification on terminal conclusion (click → focus tab)
-- `GM_listValues` / `GM_deleteValue` — used by `overview.ts` to scan `aad_running_*` and clean stale `aad_meta_*`
 
 ### Storage keys (all keyed by `runId`)
 
@@ -50,7 +48,6 @@ GM_notification, unsafeWindow
 | `aad_running_${runId}` | `true` while monitoring; used by `wasRunning()` for resume |
 | `aad_session_${runId}` | SessionData (counters, timeline, `lastProgressAt`) |
 | `aad_log_${runId}` | Persisted log buffer (always written; never gated) |
-| `aad_meta_${runId}` | `{owner, repo, workflow, url, updatedAt}` for overview widget |
 | `aad_version_check` | Cached latest release check |
 
 ### State fields (state.ts)
@@ -65,7 +62,7 @@ GM_notification, unsafeWindow
 `main.ts → checkPage()` runs on every navigation event:
 1. URL must match `/{owner}/{repo}/actions/runs/{id}` → `parseRunUrl()`
 2. Page header workflow label must match `/Deploy\s*\(PRD\)/i` → `isDeployPrdPage()` (substring/emoji-prefix tolerant)
-3. If both → build/restore the panel; else → `mountOverviewWidget(false)` to maybe show overview widget
+3. If both → build/restore the panel; otherwise only the GitHub home pull request widget is considered
 
 ### Scheduler (scheduler.ts)
 
@@ -104,16 +101,9 @@ window.addEventListener('unhandledrejection', /* → log */);
 - `resumeMonitoring()` → re-arm observer, reset `lastProgressAt = Date.now()`, clear `paused`, schedule next tick
 - `bindPanelEvents()` wires `#aad-pause-btn`; `renderToggle(el, running, paused)` shows label correctly
 
-### Overview widget (overview.ts)
-
-- `STALE_MS = 30 * 60 * 1000` — meta older than this is hidden
-- Only mounted when **not** on a Deploy (PRD) run page
-- Refreshes every 5s via `setInterval`
-- `saveRunMeta(runId, {...})` called from `start()` / `resume()` / panel build; `clearRunMeta(runId)` on manual stop
-
 ### Pull request sidebar section (pr-overview.ts)
 
-- Mounted only on `github.com/` below Top repositories; it is independent from the Active Runs overview
+- Mounted only on `github.com/` below Top repositories
 - Fetches authored and `reviewed-by` open PRs for the current `meta[name="user-login"]` account from GitHub's authenticated HTML search pages once per home-page visit, then only when the refresh button is clicked
 - Uses `target="_blank"` links for direct PR navigation
 
@@ -125,7 +115,7 @@ window.addEventListener('unhandledrejection', /* → log */);
 
 ### Multi-tab
 
-All state is keyed by `runId`, so multiple tabs running different deploys are independent. The overview widget aggregates across tabs via `GM_listValues()`.
+All state is keyed by `runId`, so multiple tabs running different deploys are independent.
 
 ## Build & Release
 
@@ -133,7 +123,7 @@ All state is keyed by `runId`, so multiple tabs running different deploys are in
 - `yarn build:dev` / `yarn build:prod` → individual builds
 - `yarn start` / `yarn dev` → local userscript server for direct GitHub debugging; install `__vite-plugin-monkey.install.user.js` once in Tampermonkey
 - `yarn dev:build` / `yarn dev:all` → build watch modes
-- `yarn preview:ui` → local Vite preview for the My PRs overview widget
+- `yarn preview:ui` → local Vite preview for the My PRs sidebar
 - **Always run `yarn build` after touching `src/**`** before committing — both `.user.js` files must be in sync with source.
 - Release: `yarn release -- patch|minor|major` (release-it bumps + builds + commits + tags), then `git push --follow-tags origin main` → `.github/workflows/release.yml` creates GitHub Release with both artifacts. Full procedure: `.agents/skills/release/SKILL.md`.
 
@@ -146,7 +136,6 @@ Conventional Commits enforced by commitlint. See `.agents/skills/commit/SKILL.md
 - ✅ Use `scheduleTick` / `cancelTick` for any periodic work
 - ✅ Key all new persistent state by `runId`
 - ✅ Update `lastProgressAt` on any meaningful action so watchdog doesn't trigger
-- ✅ Call `saveRunMeta` whenever monitoring starts/resumes; `clearRunMeta` on manual stop
 - ❌ Don't gate log writes behind the `saveLog` flag
 - ❌ Don't call `setTimeout` directly for the main poll loop
 - ❌ Don't add a GitHub token flow — DOM only
