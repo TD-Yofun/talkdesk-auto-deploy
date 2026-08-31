@@ -21,6 +21,7 @@ import {
   type UIElements,
 } from './ui/ui';
 import { mountPullRequestWidget } from './ui/pr-overview';
+import { mountOrganizationRepositorySearch } from './ui/org-repo-search';
 
 const config = loadConfig();
 const state: State = createState();
@@ -532,6 +533,7 @@ function checkPage(): void {
   if (!onTarget) {
     if (el) teardownPanel();
     mountPullRequestWidget(location.pathname === '/');
+    mountOrganizationRepositorySearch(location.pathname === '/');
     return;
   }
 
@@ -541,6 +543,7 @@ function checkPage(): void {
     buildPanelFor(params!);
   }
   mountPullRequestWidget(false);
+  mountOrganizationRepositorySearch(false);
 }
 
 // Initial + repeated checks (page may load Deploy (PRD) header after document-idle)

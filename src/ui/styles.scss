@@ -425,3 +425,114 @@ $panel-muted: #8b949e;
 .aad-summary-timeline-header {
   margin-top: 8px;
 }
+
+
+/* ── GitHub Home Organization Repository Search ───────── */
+#aad-org-repo-search {
+  margin-top: 24px;
+  padding: 16px 0 20px;
+  border-top: 1px solid var(--borderColor-muted, #d0d7de);
+  color: var(--fgColor-default, #1f2328);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 12px;
+}
+#aad-org-repo-search .aad-org-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+#aad-org-repo-search .aad-org-refresh {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--borderColor-default, #d0d7de);
+  border-radius: 6px;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--bgColor-default, #fff);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+#aad-org-repo-search .aad-org-refresh:hover { background: var(--bgColor-muted, #f6f8fa); }
+#aad-org-repo-search .aad-org-refresh:disabled { cursor: wait; opacity: .55; }
+#aad-org-repo-search .aad-org-form { display: flex; flex-direction: column; gap: 8px; }
+#aad-org-repo-search .aad-org-select-wrap { position: relative; }
+#aad-org-repo-search .aad-org-single {
+  padding: 6px 8px;
+  border: 1px solid var(--borderColor-default, #d0d7de);
+  border-radius: 6px;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--bgColor-muted, #f6f8fa);
+  font: inherit;
+}
+#aad-org-repo-search .aad-org-select-wrap::after {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--fgColor-muted, #57606a);
+  border-bottom: 1.5px solid var(--fgColor-muted, #57606a);
+  content: '';
+  pointer-events: none;
+  transform: translateY(-65%) rotate(45deg);
+}
+#aad-org-repo-search .aad-org-select,
+#aad-org-repo-search .aad-org-query {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 32px 6px 8px;
+  border: 1px solid var(--borderColor-default, #d0d7de);
+  border-radius: 6px;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--bgColor-default, #fff);
+  font: inherit;
+}
+#aad-org-repo-search .aad-org-select { appearance: none; }
+#aad-org-repo-search .aad-org-query-row { display: flex; gap: 6px; }
+#aad-org-repo-search .aad-org-query { flex: 1; }
+#aad-org-repo-search .aad-org-submit {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--button-primary-borderColor-rest, #1f883d);
+  border-radius: 6px;
+  color: #fff;
+  background: var(--button-primary-bgColor-rest, #1f883d);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+#aad-org-repo-search .aad-org-submit:hover { background: var(--button-primary-bgColor-hover, #1a7f37); }
+#aad-org-repo-search .aad-org-submit:disabled,
+#aad-org-repo-search .aad-org-select:disabled,
+#aad-org-repo-search .aad-org-query:disabled { cursor: not-allowed; opacity: .55; }
+#aad-org-repo-search .aad-org-submit:disabled { border-color: var(--button-default-borderColor-rest, #d0d7de); color: var(--fgColor-muted, #57606a); background: var(--button-default-bgColor-rest, #f6f8fa); }
+#aad-org-repo-search .aad-org-results { margin-top: 10px; }
+#aad-org-repo-search .aad-org-item { padding: 7px 0; }
+#aad-org-repo-search .aad-org-link {
+  display: block;
+  overflow: hidden;
+  color: var(--fgColor-link, #0969da);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#aad-org-repo-search .aad-org-link:hover { text-decoration: underline; }
+#aad-org-repo-search .aad-org-meta {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--fgColor-muted, #57606a);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#aad-org-repo-search .aad-org-empty {
+  padding: 12px 0 0;
+  color: var(--fgColor-muted, #57606a);
+  text-align: center;
+}
+#aad-org-repo-search .aad-org-error { color: var(--fgColor-danger, #cf222e); }

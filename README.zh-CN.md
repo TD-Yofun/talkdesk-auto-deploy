@@ -21,6 +21,7 @@
 - **跨刷新持久化** —— 通过 `wasRunning()` 检测，刷新后自动恢复计数器、事件时间线和日志
 - **日志始终持久化** —— 每个 run 的日志缓冲区跨刷新保留，可随时下载 `aad-run-<runId>.log`
 - **My PRs 侧栏区块** —— 在 `github.com/` 首页的 Top repositories 下方显示我创建的 Open PR 与我已 Review 的 Open PR；点击会在新标签页打开
+- **组织仓库搜索** —— 在 `github.com/` 首页加载你所属的组织，并按关键词搜索组织仓库；结果点击后在新标签页打开
 - **bfcache 安全** —— 通过 `pageshow.persisted` 在浏览器前进/后退后重新初始化面板
 - **全局错误捕获** —— `window.error` 和 `unhandledrejection` 会输出到面板日志
 - **版本检查** —— 与最新公开 userscript release asset 比对，过期脚本会被显眼地拦截并提供安装链接
@@ -68,6 +69,10 @@
 ### My PRs 侧栏区块
 
 在 GitHub 首页，Top repositories 下方的独立区块会通过当前已登录的 GitHub 会话加载我创建的 Open PR 和我已 Review 的 Open PR。它使用当前 GitHub 登录账号作为 author/reviewer 过滤条件，首次进入首页时加载，之后仅在点击刷新按钮时重新加载。
+
+### 组织仓库搜索
+
+首页侧栏会优先读取 GitHub 首页仪表盘上下文切换器中的组织列表（`dialog#switch_dashboard_context_left_column-dialog`），并以 `/settings/organizations` 和 `/user/orgs` 作为回退。没有组织时隐藏整个搜索区域；只有一个组织时自动使用该组织并隐藏下拉框；多个组织时才显示组织选择。输入仓库关键词并点击 **Search**，脚本会使用 GitHub 仓库搜索条件（`org:<组织> <关键词>`）展示结果，点击后在新标签页打开仓库。组织信息和搜索结果均通过当前浏览器登录会话请求，不保存也不需要 Token。
 
 ## 工作原理
 
@@ -173,6 +178,7 @@ src/
     session.ts         ← 跨刷新的 session 持久化
     scheduler.ts       ← 基于 Web Worker 的定时器（规避后台标签页节流）
     pull-requests.ts   ← 基于已登录 GitHub HTML 的 PR 查询
+    organization-repositories.ts ← 组织成员关系和仓库搜索
     version-check.ts   ← 与最新 GitHub Release 比对，结果缓存
   api/
     skip-timers.ts     ← MutationObserver + 3 种 DOM 点击策略
@@ -181,6 +187,7 @@ src/
     styles.scss        ← 面板和侧栏的 Sass 样式
     ui.ts              ← 面板构建、渲染、事件绑定、总结 + Markdown 导出
     pr-overview.ts     ← GitHub 首页 PR 小部件
+    org-repo-search.ts  ← GitHub 首页组织仓库搜索
   utils/
     helpers.ts         ← ts()、esc()、formatDuration()
     url.ts             ← URL 解析 + Deploy (PRD) 页面检测
