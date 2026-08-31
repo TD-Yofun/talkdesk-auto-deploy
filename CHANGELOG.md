@@ -1,5 +1,13 @@
 
 
+## [1.0.15](https://github.com/TD-Yofun/github-auto-deploy/compare/v1.0.14...v1.0.15) (2026-08-31)
+
+
+### Features
+
+* add organization repository search ([6119a1f](https://github.com/TD-Yofun/github-auto-deploy/commit/6119a1ff913281029e6266229cfbc6d7b19ec834))
+* remove active runs overview widget ([487356e](https://github.com/TD-Yofun/github-auto-deploy/commit/487356eacf9a77f00d4bf45e8aa38426556fda1b))
+
 ## [1.0.14](https://github.com/TD-Yofun/github-auto-deploy/compare/v1.0.13...v1.0.14) (2026-07-26)
 
 
